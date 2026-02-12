@@ -80,7 +80,6 @@ jobs:
     name: Deploy to Staging
     needs: docker
     runs-on: ubuntu-latest
-    environment: staging
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     steps:
       - name: Deploy via SSH
@@ -100,7 +99,6 @@ jobs:
     name: Deploy to Production
     needs: docker
     runs-on: ubuntu-latest
-    environment: production
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Deploy via SSH
