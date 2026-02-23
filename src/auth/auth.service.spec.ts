@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 
@@ -20,11 +20,13 @@ const createUser = (overrides: Partial<{ id: string; email: string; passwordHash
 describe('AuthService', () => {
   let usersService: {
     findByEmail: jest.Mock;
+    findById: jest.Mock;
     setMfaOtp: jest.Mock;
     clearMfaOtp: jest.Mock;
     createUser: jest.Mock;
     getUserRoles: jest.Mock;
     ensureDefaultRole: jest.Mock;
+    toggleMfa: jest.Mock;
   };
   let jwtService: { signAsync: jest.Mock };
   let mailerService: { sendMfaOtp: jest.Mock };
@@ -33,11 +35,13 @@ describe('AuthService', () => {
   beforeEach(() => {
     usersService = {
       findByEmail: jest.fn(),
+      findById: jest.fn(),
       setMfaOtp: jest.fn(),
       clearMfaOtp: jest.fn(),
       createUser: jest.fn(),
       getUserRoles: jest.fn().mockResolvedValue(['ADMIN']),
       ensureDefaultRole: jest.fn(),
+      toggleMfa: jest.fn(),
     };
     jwtService = {
       signAsync: jest.fn().mockResolvedValue('jwt-token'),
@@ -143,6 +147,32 @@ describe('AuthService', () => {
 
     await expect(authService.verifyMfa({ email: 'user@example.com', otp: '000000' })).rejects.toBeInstanceOf(
       UnauthorizedException,
+    );
+  });
+
+  it('enables MFA for authenticated user', async () => {
+    usersService.findById.mockResolvedValue(createUser({ id: 'user-1', mfaEnabled: false }));
+
+    const result = await authService.toggleMfa('user-1', { enabled: true });
+
+    expect(result).toEqual({ mfaEnabled: true });
+    expect(usersService.toggleMfa).toHaveBeenCalledWith('user-1', true);
+  });
+
+  it('disables MFA for authenticated user', async () => {
+    usersService.findById.mockResolvedValue(createUser({ id: 'user-1', mfaEnabled: true }));
+
+    const result = await authService.toggleMfa('user-1', { enabled: false });
+
+    expect(result).toEqual({ mfaEnabled: false });
+    expect(usersService.toggleMfa).toHaveBeenCalledWith('user-1', false);
+  });
+
+  it('throws NotFoundException when toggling MFA for non-existent user', async () => {
+    usersService.findById.mockResolvedValue(null);
+
+    await expect(authService.toggleMfa('non-existent', { enabled: true })).rejects.toBeInstanceOf(
+      NotFoundException,
     );
   });
 });

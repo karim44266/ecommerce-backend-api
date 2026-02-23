@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { DATABASE_CONNECTION } from '../database/database.constants';
 import * as schema from '../database/schema';
@@ -81,5 +81,20 @@ export class UsersService {
       .update(schema.users)
       .set({ mfaOtpHash: null, mfaOtpExpiresAt: null })
       .where(eq(schema.users.email, email));
+  }
+
+  async findById(userId: string): Promise<User | null> {
+    const user = await this.db.query.users.findFirst({
+      where: eq(schema.users.id, userId),
+    });
+
+    return user ?? null;
+  }
+
+  async toggleMfa(userId: string, enabled: boolean): Promise<void> {
+    await this.db
+      .update(schema.users)
+      .set({ mfaEnabled: enabled, mfaOtpHash: null, mfaOtpExpiresAt: null })
+      .where(eq(schema.users.id, userId));
   }
 }
