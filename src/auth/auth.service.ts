@@ -40,7 +40,8 @@ export class AuthService {
       return { mfaRequired: true };
     }
 
-    const accessToken = await this.signToken(user.id, user.email);
+    const roles = await this.usersService.getUserRoles(user.id);
+    const accessToken = await this.signToken(user.id, user.email, roles);
     return { accessToken };
   }
 
@@ -53,7 +54,9 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.usersService.createUser(dto.email, passwordHash);
 
-    const accessToken = await this.signToken(user.id, user.email);
+    await this.usersService.ensureDefaultRole(user.id);
+    const roles = await this.usersService.getUserRoles(user.id);
+    const accessToken = await this.signToken(user.id, user.email, roles);
     return { accessToken };
   }
 
@@ -74,13 +77,14 @@ export class AuthService {
     }
 
     await this.usersService.clearMfaOtp(user.email);
-    const accessToken = await this.signToken(user.id, user.email);
+    const roles = await this.usersService.getUserRoles(user.id);
+    const accessToken = await this.signToken(user.id, user.email, roles);
 
     return { accessToken };
   }
 
-  private async signToken(userId: string, email: string): Promise<string> {
-    return this.jwtService.signAsync({ sub: userId, email });
+  private async signToken(userId: string, email: string, roles: string[]): Promise<string> {
+    return this.jwtService.signAsync({ sub: userId, email, roles });
   }
 
   private generateOtp(): string {

@@ -1,0 +1,1 @@
+-- Deprecated migration (no-op). Use 0001_add_roles.sql instead.

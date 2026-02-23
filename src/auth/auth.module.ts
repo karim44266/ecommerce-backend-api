@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { MailerService } from './mailer.service';
+import { RolesSeederService } from './roles-seeder.service';
 import { UsersService } from './users.service';
 
 @Module({
@@ -18,7 +19,7 @@ import { UsersService } from './users.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, UsersService, MailerService, JwtStrategy],
+  providers: [AuthService, UsersService, MailerService, JwtStrategy, RolesSeederService],
   exports: [AuthService],
 })
 export class AuthModule {}

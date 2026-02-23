@@ -23,6 +23,8 @@ describe('AuthService', () => {
     setMfaOtp: jest.Mock;
     clearMfaOtp: jest.Mock;
     createUser: jest.Mock;
+    getUserRoles: jest.Mock;
+    ensureDefaultRole: jest.Mock;
   };
   let jwtService: { signAsync: jest.Mock };
   let mailerService: { sendMfaOtp: jest.Mock };
@@ -34,6 +36,8 @@ describe('AuthService', () => {
       setMfaOtp: jest.fn(),
       clearMfaOtp: jest.fn(),
       createUser: jest.fn(),
+      getUserRoles: jest.fn().mockResolvedValue(['ADMIN']),
+      ensureDefaultRole: jest.fn(),
     };
     jwtService = {
       signAsync: jest.fn().mockResolvedValue('jwt-token'),
@@ -56,6 +60,9 @@ describe('AuthService', () => {
     const result = await authService.login({ email: 'user@example.com', password: 'secret' });
 
     expect(result).toEqual({ accessToken: 'jwt-token' });
+    expect(jwtService.signAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ roles: ['ADMIN'] }),
+    );
     expect(usersService.setMfaOtp).not.toHaveBeenCalled();
     expect(mailerService.sendMfaOtp).not.toHaveBeenCalled();
   });
@@ -89,7 +96,24 @@ describe('AuthService', () => {
     const result = await authService.verifyMfa({ email: 'user@example.com', otp: '123456' });
 
     expect(result).toEqual({ accessToken: 'jwt-token' });
+    expect(jwtService.signAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ roles: ['ADMIN'] }),
+    );
     expect(usersService.clearMfaOtp).toHaveBeenCalledWith('user@example.com');
+  });
+
+  it('assigns default role on register', async () => {
+    usersService.findByEmail.mockResolvedValue(null);
+    usersService.createUser.mockResolvedValue(createUser({ id: 'user-2' }));
+    usersService.getUserRoles.mockResolvedValue(['CUSTOMER']);
+    (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
+
+    await authService.register({ email: 'new@example.com', password: 'secret' });
+
+    expect(usersService.ensureDefaultRole).toHaveBeenCalledWith('user-2');
+    expect(jwtService.signAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ roles: ['CUSTOMER'] }),
+    );
   });
 
   it('rejects expired MFA OTP and clears OTP fields', async () => {

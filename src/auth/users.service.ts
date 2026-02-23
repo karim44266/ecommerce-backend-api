@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { DATABASE_CONNECTION } from '../database/database.constants';
 import * as schema from '../database/schema';
@@ -27,6 +27,46 @@ export class UsersService {
       .returning();
 
     return user;
+  }
+
+  async seedDefaultRoles(): Promise<void> {
+    await this.db
+      .insert(schema.roles)
+      .values([
+        { name: 'ADMIN' },
+        { name: 'STAFF' },
+        { name: 'CUSTOMER' },
+      ])
+      .onConflictDoNothing();
+  }
+
+  async getUserRoles(userId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ name: schema.roles.name })
+      .from(schema.userRoles)
+      .innerJoin(schema.roles, eq(schema.userRoles.roleId, schema.roles.id))
+      .where(eq(schema.userRoles.userId, userId));
+
+    return rows.map((row) => row.name);
+  }
+
+  async assignRoleToUser(userId: string, roleName: string): Promise<void> {
+    const role = await this.db.query.roles.findFirst({
+      where: eq(schema.roles.name, roleName),
+    });
+
+    if (!role) {
+      return;
+    }
+
+    await this.db
+      .insert(schema.userRoles)
+      .values({ userId, roleId: role.id })
+      .onConflictDoNothing();
+  }
+
+  async ensureDefaultRole(userId: string): Promise<void> {
+    await this.assignRoleToUser(userId, 'CUSTOMER');
   }
 
   async setMfaOtp(email: string, otpHash: string, otpExpiresAt: Date): Promise<void> {
