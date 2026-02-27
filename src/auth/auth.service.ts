@@ -1,8 +1,9 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomInt } from 'crypto';
 import { LoginDto } from './dto/login.dto';
+import { MfaToggleDto } from './dto/mfa-toggle.dto';
 import { MfaVerifyDto } from './dto/mfa-verify.dto';
 import { RegisterDto } from './dto/register.dto';
 import { MailerService } from './mailer.service';
@@ -40,7 +41,8 @@ export class AuthService {
       return { mfaRequired: true };
     }
 
-    const accessToken = await this.signToken(user.id, user.email);
+    const roles = await this.usersService.getUserRoles(user.id);
+    const accessToken = await this.signToken(user.id, user.email, roles);
     return { accessToken };
   }
 
@@ -53,7 +55,9 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.usersService.createUser(dto.email, passwordHash);
 
-    const accessToken = await this.signToken(user.id, user.email);
+    await this.usersService.ensureDefaultRole(user.id);
+    const roles = await this.usersService.getUserRoles(user.id);
+    const accessToken = await this.signToken(user.id, user.email, roles);
     return { accessToken };
   }
 
@@ -74,13 +78,24 @@ export class AuthService {
     }
 
     await this.usersService.clearMfaOtp(user.email);
-    const accessToken = await this.signToken(user.id, user.email);
+    const roles = await this.usersService.getUserRoles(user.id);
+    const accessToken = await this.signToken(user.id, user.email, roles);
 
     return { accessToken };
   }
 
-  private async signToken(userId: string, email: string): Promise<string> {
-    return this.jwtService.signAsync({ sub: userId, email });
+  private async signToken(userId: string, email: string, roles: string[]): Promise<string> {
+    return this.jwtService.signAsync({ sub: userId, email, roles });
+  }
+
+  async toggleMfa(userId: string, dto: MfaToggleDto): Promise<{ mfaEnabled: boolean }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.usersService.toggleMfa(userId, dto.enabled);
+    return { mfaEnabled: dto.enabled };
   }
 
   private generateOtp(): string {
