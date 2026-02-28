@@ -13,6 +13,7 @@ export class UsersService {
 
   /** Strip sensitive auth fields before returning to the client. */
   private sanitize(row: typeof schema.users.$inferSelect) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { passwordHash, mfaOtpHash, mfaOtpExpiresAt, ...safe } = row;
     return safe;
   }

@@ -1,6 +1,7 @@
 import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
+import { MailerService } from './mailer.service';
 
 jest.mock('bcrypt', () => ({
   compare: jest.fn(),
@@ -50,7 +51,11 @@ describe('AuthService', () => {
       sendMfaOtp: jest.fn().mockResolvedValue(undefined),
     };
 
-    authService = new AuthService(usersService as any, jwtService as any, mailerService as any);
+    authService = new AuthService(
+      usersService as unknown as import('./users.service').UsersService,
+      jwtService as unknown as import('@nestjs/jwt').JwtService,
+      mailerService as unknown as MailerService,
+    );
   });
 
   afterEach(() => {
