@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { desc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { DATABASE_CONNECTION } from '../database/database.constants';
 import * as schema from '../database/schema';
@@ -11,48 +11,53 @@ export class UsersService {
     private readonly db: NodePgDatabase<typeof schema>,
   ) {}
 
-  /** Strip sensitive auth fields before returning to the client. */
-  private sanitize(row: typeof schema.users.$inferSelect) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { passwordHash, mfaOtpHash, mfaOtpExpiresAt, ...safe } = row;
+  /** Strip sensitive fields before returning to client. */
+  private sanitize(
+    user: typeof schema.users.$inferSelect,
+  ): Omit<
+    typeof schema.users.$inferSelect,
+    'passwordHash' | 'mfaOtpHash' | 'mfaOtpExpiresAt'
+  > {
+    const { passwordHash: _pw, mfaOtpHash: _otp, mfaOtpExpiresAt: _exp, ...safe } = user;
     return safe;
   }
 
   async findAll() {
-    const rows = await this.db
-      .select()
-      .from(schema.users)
-      .orderBy(desc(schema.users.createdAt));
+    const rows = await this.db.select().from(schema.users);
     return rows.map((row) => this.sanitize(row));
   }
 
   async findById(id: string) {
-    const [row] = await this.db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.id, id))
-      .limit(1);
-    if (!row) throw new NotFoundException(`User ${id} not found`);
-    return this.sanitize(row);
+    const user = await this.db.query.users.findFirst({
+      where: eq(schema.users.id, id),
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return this.sanitize(user);
   }
 
   async updateRole(id: string, role: string) {
-    const [row] = await this.db
+    const [updated] = await this.db
       .update(schema.users)
       .set({ role, updatedAt: new Date() })
       .where(eq(schema.users.id, id))
       .returning();
-    if (!row) throw new NotFoundException(`User ${id} not found`);
-    return this.sanitize(row);
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+    return this.sanitize(updated);
   }
 
   async updateStatus(id: string, status: string) {
-    const [row] = await this.db
+    const [updated] = await this.db
       .update(schema.users)
       .set({ status, updatedAt: new Date() })
       .where(eq(schema.users.id, id))
       .returning();
-    if (!row) throw new NotFoundException(`User ${id} not found`);
-    return this.sanitize(row);
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+    return this.sanitize(updated);
   }
 }

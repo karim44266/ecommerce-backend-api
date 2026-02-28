@@ -29,6 +29,13 @@
       "when": 1770902384994,
       "tag": "0002_real_black_bolt",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1772295860794,
+      "tag": "0003_fat_korath",
+      "breakpoints": true
     }
   ]
 }
