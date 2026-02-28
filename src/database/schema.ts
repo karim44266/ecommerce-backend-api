@@ -21,9 +21,6 @@ export const users = pgTable(
     role: text('role').notNull().default('customer'),
     status: text('status').notNull().default('active'),
     passwordHash: text('password_hash').notNull(),
-    name: text('name').notNull().default(''),
-    role: text('role').notNull().default('customer'),
-    status: text('status').notNull().default('active'),
     mfaEnabled: boolean('mfa_enabled').notNull().default(false),
     mfaOtpHash: text('mfa_otp_hash'),
     mfaOtpExpiresAt: timestamp('mfa_otp_expires_at', { withTimezone: true }),
@@ -117,9 +114,77 @@ export const categoriesRelations = relations(categories, ({ many }) => ({
   products: many(products),
 }));
 
-export const productsRelations = relations(products, ({ one }) => ({
+export const productsRelations = relations(products, ({ one, many }) => ({
   category: one(categories, {
     fields: [products.categoryId],
     references: [categories.id],
+  }),
+  inventoryItem: one(inventoryItems, {
+    fields: [products.id],
+    references: [inventoryItems.productId],
+  }),
+}));
+
+// ─── Inventory Items ─────────────────────────────────────────────
+export const inventoryItems = pgTable(
+  'inventory_items',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    productId: uuid('product_id')
+      .notNull()
+      .unique()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    quantity: integer('quantity').notNull().default(0),
+    lowStockThreshold: integer('low_stock_threshold').notNull().default(10),
+    lastAdjustedAt: timestamp('last_adjusted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    productIdx: index('inventory_items_product_idx').on(table.productId),
+  }),
+);
+
+// ─── Inventory Adjustments (Audit Log) ───────────────────────────
+export const inventoryAdjustments = pgTable(
+  'inventory_adjustments',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    inventoryItemId: uuid('inventory_item_id')
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: 'cascade' }),
+    adjustment: integer('adjustment').notNull(),
+    reason: text('reason'),
+    adjustedBy: uuid('adjusted_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    itemIdx: index('inventory_adj_item_idx').on(table.inventoryItemId),
+    userIdx: index('inventory_adj_user_idx').on(table.adjustedBy),
+  }),
+);
+
+// ─── Inventory Relations ─────────────────────────────────────────
+export const inventoryItemsRelations = relations(inventoryItems, ({ one, many }) => ({
+  product: one(products, {
+    fields: [inventoryItems.productId],
+    references: [products.id],
+  }),
+  adjustments: many(inventoryAdjustments),
+}));
+
+export const inventoryAdjustmentsRelations = relations(inventoryAdjustments, ({ one }) => ({
+  inventoryItem: one(inventoryItems, {
+    fields: [inventoryAdjustments.inventoryItemId],
+    references: [inventoryItems.id],
+  }),
+  user: one(users, {
+    fields: [inventoryAdjustments.adjustedBy],
+    references: [users.id],
   }),
 }));

@@ -4,12 +4,18 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, ilike, sql, SQL } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { DATABASE_CONNECTION } from '../database/database.constants';
 import * as schema from '../database/schema';
+import { CategoryQueryDto } from './dto/category-query.dto';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
+
+/** Escape special LIKE characters so user input is treated literally. */
+function escapeLike(value: string): string {
+  return value.replace(/[%_\\]/g, '\\$&');
+}
 
 @Injectable()
 export class CategoriesService {
@@ -26,20 +32,82 @@ export class CategoriesService {
       .replace(/^-|-$/g, '');
   }
 
-  async findAll() {
+  /** Paginated category list with optional search and product count. */
+  async findAll(query: CategoryQueryDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const offset = (page - 1) * limit;
+
+    const conditions: SQL[] = [];
+    if (query.search) {
+      conditions.push(ilike(schema.categories.name, `%${escapeLike(query.search)}%`));
+    }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Total count
+    const [{ count: total }] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.categories)
+      .where(whereClause);
+
+    // Categories with product count via subquery
+    const rows = await this.db
+      .select({
+        id: schema.categories.id,
+        name: schema.categories.name,
+        slug: schema.categories.slug,
+        description: schema.categories.description,
+        createdAt: schema.categories.createdAt,
+        productCount: sql<number>`(
+          SELECT count(*)::int FROM ${schema.products}
+          WHERE ${schema.products.categoryId} = ${schema.categories.id}
+        )`,
+      })
+      .from(schema.categories)
+      .where(whereClause)
+      .orderBy(schema.categories.name)
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      data: rows,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /** Get all categories (lightweight, for dropdowns). */
+  async findAllSimple() {
     return this.db.query.categories.findMany({
       orderBy: (c, { asc }) => [asc(c.name)],
     });
   }
 
   async findById(id: string) {
-    const category = await this.db.query.categories.findFirst({
-      where: eq(schema.categories.id, id),
-    });
-    if (!category) {
+    const rows = await this.db
+      .select({
+        id: schema.categories.id,
+        name: schema.categories.name,
+        slug: schema.categories.slug,
+        description: schema.categories.description,
+        createdAt: schema.categories.createdAt,
+        productCount: sql<number>`(
+          SELECT count(*)::int FROM ${schema.products}
+          WHERE ${schema.products.categoryId} = ${schema.categories.id}
+        )`,
+      })
+      .from(schema.categories)
+      .where(eq(schema.categories.id, id))
+      .limit(1);
+
+    if (rows.length === 0) {
       throw new NotFoundException('Category not found');
     }
-    return category;
+    return rows[0];
   }
 
   async create(dto: CreateCategoryDto) {
@@ -54,7 +122,7 @@ export class CategoriesService {
           description: dto.description ?? null,
         })
         .returning();
-      return created;
+      return this.findById(created.id);
     } catch (error: unknown) {
       if (
         error instanceof Error &&
@@ -71,7 +139,11 @@ export class CategoriesService {
     await this.findById(id);
 
     const values: Record<string, unknown> = {};
-    if (dto.name !== undefined) values.name = dto.name;
+    if (dto.name !== undefined) {
+      values.name = dto.name;
+      // Auto-update slug if name changes and no explicit slug provided
+      if (dto.slug === undefined) values.slug = this.slugify(dto.name);
+    }
     if (dto.slug !== undefined) values.slug = dto.slug;
     if (dto.description !== undefined) values.description = dto.description;
 
@@ -80,12 +152,11 @@ export class CategoriesService {
     }
 
     try {
-      const [updated] = await this.db
+      await this.db
         .update(schema.categories)
         .set(values)
-        .where(eq(schema.categories.id, id))
-        .returning();
-      return updated;
+        .where(eq(schema.categories.id, id));
+      return this.findById(id);
     } catch (error: unknown) {
       if (
         error instanceof Error &&
