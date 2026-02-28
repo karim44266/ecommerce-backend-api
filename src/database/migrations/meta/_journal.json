@@ -36,6 +36,13 @@
       "when": 1772295860794,
       "tag": "0003_fat_korath",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1772301209499,
+      "tag": "0004_dizzy_madelyne_pryor",
+      "breakpoints": true
     }
   ]
 }

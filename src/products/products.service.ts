@@ -4,19 +4,26 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, eq, ilike, sql, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, lte, sql, SQL } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { DATABASE_CONNECTION } from '../database/database.constants';
 import * as schema from '../database/schema';
+import { InventoryService } from '../inventory/inventory.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+
+/** Escape special LIKE characters so user input is treated literally. */
+function escapeLike(value: string): string {
+  return value.replace(/[%_\\]/g, '\\$&');
+}
 
 @Injectable()
 export class ProductsService {
   constructor(
     @Inject(DATABASE_CONNECTION)
     private readonly db: NodePgDatabase<typeof schema>,
+    private readonly inventoryService: InventoryService,
   ) {}
 
   /** Map a raw DB row + category name to the API response shape. */
@@ -36,12 +43,65 @@ export class ProductsService {
       status: row.status,
       category: categoryName ?? null,
       categoryId: row.categoryId,
-      // Placeholder ratings until reviews feature is built
-      rating: 4.0 + Math.round(Math.random() * 10) / 10,
-      reviewCount: Math.floor(Math.random() * 500) + 10,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
+  }
+
+  /** Build WHERE conditions from query parameters. */
+  private async buildConditions(query: ProductQueryDto): Promise<SQL[]> {
+    const conditions: SQL[] = [];
+
+    if (query.search) {
+      conditions.push(ilike(schema.products.name, `%${escapeLike(query.search)}%`));
+    }
+
+    // Category filter by ID (preferred)
+    if (query.categoryId) {
+      conditions.push(eq(schema.products.categoryId, query.categoryId));
+    } else if (query.category) {
+      // Legacy: filter by category name
+      const cat = await this.db.query.categories.findFirst({
+        where: ilike(schema.categories.name, query.category),
+      });
+      if (cat) {
+        conditions.push(eq(schema.products.categoryId, cat.id));
+      } else {
+        // No matching category → force empty result
+        conditions.push(sql`false`);
+      }
+    }
+
+    // Status filter
+    if (query.status) {
+      conditions.push(eq(schema.products.status, query.status));
+    }
+
+    // Price range
+    if (query.minPrice !== undefined) {
+      conditions.push(gte(schema.products.price, query.minPrice.toFixed(2)));
+    }
+    if (query.maxPrice !== undefined) {
+      conditions.push(lte(schema.products.price, query.maxPrice.toFixed(2)));
+    }
+
+    return conditions;
+  }
+
+  /** Build ORDER BY from query. */
+  private buildOrderBy(query: ProductQueryDto) {
+    const dir = query.sortOrder === 'desc' ? desc : asc;
+    switch (query.sortBy) {
+      case 'name':
+        return dir(schema.products.name);
+      case 'price':
+        return dir(schema.products.price);
+      case 'updatedAt':
+        return dir(schema.products.updatedAt);
+      case 'createdAt':
+      default:
+        return dir(schema.products.createdAt);
+    }
   }
 
   async findAll(query: ProductQueryDto) {
@@ -49,30 +109,14 @@ export class ProductsService {
     const limit = query.limit ?? 20;
     const offset = (page - 1) * limit;
 
-    // Build WHERE conditions dynamically
-    const conditions: SQL[] = [];
+    const conditions = await this.buildConditions(query);
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    if (query.search) {
-      conditions.push(ilike(schema.products.name, `%${query.search}%`));
-    }
-
-    // Category filter — look up category id from name
-    let categoryId: string | undefined;
-    if (query.category) {
-      const cat = await this.db.query.categories.findFirst({
-        where: ilike(schema.categories.name, query.category),
-      });
-      if (cat) {
-        categoryId = cat.id;
-        conditions.push(eq(schema.products.categoryId, cat.id));
-      } else {
-        // No matching category → return empty
-        return [];
-      }
-    }
-
-    const whereClause =
-      conditions.length > 0 ? and(...conditions) : undefined;
+    // Total count
+    const [{ count: total }] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.products)
+      .where(whereClause);
 
     const rows = await this.db
       .select({
@@ -85,11 +129,19 @@ export class ProductsService {
         eq(schema.products.categoryId, schema.categories.id),
       )
       .where(whereClause)
-      .orderBy(schema.products.createdAt)
+      .orderBy(this.buildOrderBy(query))
       .limit(limit)
       .offset(offset);
 
-    return rows.map((r) => this.toResponse(r.product, r.categoryName));
+    return {
+      data: rows.map((r) => this.toResponse(r.product, r.categoryName)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async findById(id: string) {
@@ -128,6 +180,12 @@ export class ProductsService {
           categoryId: dto.categoryId ?? null,
         })
         .returning();
+
+      // Auto-create inventory record for the new product
+      await this.inventoryService.ensureInventory(
+        created.id,
+        dto.inventory ?? 0,
+      );
 
       // Fetch with category name
       return this.findById(created.id);
