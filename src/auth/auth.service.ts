@@ -36,7 +36,7 @@ export class AuthService {
       const otpExpiresAt = new Date(Date.now() + this.otpTtlMs);
 
       await this.usersService.setMfaOtp(user.email, otpHash, otpExpiresAt);
-      await this.mailerService.sendMfaOtp(user.email, otp);
+      this.mailerService.sendMfaOtp(user.email, otp);
 
       return { mfaRequired: true };
     }
