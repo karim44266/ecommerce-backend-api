@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, Min, Max } from 'class-validator';
+import { IsOptional, IsString, IsInt, IsIn, IsUUID, Min, Max } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
 export class ProductQueryDto {
@@ -13,6 +13,28 @@ export class ProductQueryDto {
   @IsString()
   @IsOptional()
   category?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by category ID' })
+  @IsUUID()
+  @IsOptional()
+  categoryId?: string;
+
+  @ApiPropertyOptional({ example: 'active', description: 'Filter by status' })
+  @IsString()
+  @IsOptional()
+  status?: string;
+
+  @ApiPropertyOptional({ example: 'createdAt', description: 'Sort field' })
+  @IsString()
+  @IsIn(['name', 'price', 'inventory', 'createdAt', 'updatedAt', 'status'])
+  @IsOptional()
+  sortBy?: string = 'createdAt';
+
+  @ApiPropertyOptional({ example: 'desc', description: 'Sort direction' })
+  @IsString()
+  @IsIn(['asc', 'desc'])
+  @IsOptional()
+  sortOrder?: 'asc' | 'desc' = 'desc';
 
   @ApiPropertyOptional({ example: 1, default: 1 })
   @Type(() => Number)

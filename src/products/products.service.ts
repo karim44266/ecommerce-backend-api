@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, eq, ilike, sql, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, sql, SQL } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { DATABASE_CONNECTION } from '../database/database.constants';
 import * as schema from '../database/schema';
@@ -56,23 +56,50 @@ export class ProductsService {
       conditions.push(ilike(schema.products.name, `%${query.search}%`));
     }
 
-    // Category filter — look up category id from name
-    let categoryId: string | undefined;
-    if (query.category) {
+    if (query.status) {
+      conditions.push(eq(schema.products.status, query.status));
+    }
+
+    // Category filter — by ID directly or by name
+    if (query.categoryId) {
+      conditions.push(eq(schema.products.categoryId, query.categoryId));
+    } else if (query.category) {
       const cat = await this.db.query.categories.findFirst({
         where: ilike(schema.categories.name, query.category),
       });
       if (cat) {
-        categoryId = cat.id;
         conditions.push(eq(schema.products.categoryId, cat.id));
       } else {
-        // No matching category → return empty
-        return [];
+        return { data: [], meta: { total: 0, page, limit, totalPages: 0 } };
       }
     }
 
     const whereClause =
       conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Sorting
+    const sortColumnMap: Record<string, any> = {
+      name: schema.products.name,
+      price: schema.products.price,
+      inventory: schema.products.inventory,
+      createdAt: schema.products.createdAt,
+      updatedAt: schema.products.updatedAt,
+      status: schema.products.status,
+    };
+    const sortCol = sortColumnMap[query.sortBy ?? 'createdAt'] ?? schema.products.createdAt;
+    const orderFn = query.sortOrder === 'asc' ? asc : desc;
+
+    // Count total matching rows
+    const [countResult] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.products)
+      .leftJoin(
+        schema.categories,
+        eq(schema.products.categoryId, schema.categories.id),
+      )
+      .where(whereClause);
+
+    const total = countResult?.count ?? 0;
 
     const rows = await this.db
       .select({
@@ -85,11 +112,19 @@ export class ProductsService {
         eq(schema.products.categoryId, schema.categories.id),
       )
       .where(whereClause)
-      .orderBy(schema.products.createdAt)
+      .orderBy(orderFn(sortCol))
       .limit(limit)
       .offset(offset);
 
-    return rows.map((r) => this.toResponse(r.product, r.categoryName));
+    return {
+      data: rows.map((r) => this.toResponse(r.product, r.categoryName)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async findById(id: string) {

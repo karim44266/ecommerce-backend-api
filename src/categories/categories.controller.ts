@@ -37,6 +37,13 @@ export class CategoriesController {
     return this.categoriesService.findAll();
   }
 
+  @Get('simple')
+  @ApiOperation({ summary: 'List categories (id, name, slug only — public)' })
+  @ApiOkResponse({ description: 'Simplified category list' })
+  findAllSimple() {
+    return this.categoriesService.findAllSimple();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get category by ID (public)' })
   @ApiOkResponse({ description: 'Category detail' })
