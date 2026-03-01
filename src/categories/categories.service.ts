@@ -82,12 +82,6 @@ export class CategoriesService {
 
   /** Get all categories (lightweight, for dropdowns). */
   async findAllSimple() {
-    return this.db.query.categories.findMany({
-      orderBy: (c, { asc }) => [asc(c.name)],
-    });
-  }
-
-  async findAllSimple() {
     return this.db
       .select({
         id: schema.categories.id,

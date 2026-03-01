@@ -1,9 +1,10 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMinSize,
   IsArray,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsUUID,
   Min,
@@ -23,6 +24,43 @@ export class OrderItemDto {
   quantity: number;
 }
 
+export class ShippingAddressDto {
+  @ApiProperty({ example: 'John Doe' })
+  @IsString()
+  @IsNotEmpty()
+  fullName: string;
+
+  @ApiProperty({ example: '123 Main St' })
+  @IsString()
+  @IsNotEmpty()
+  addressLine1: string;
+
+  @ApiPropertyOptional({ example: 'Apt 4B' })
+  @IsString()
+  @IsOptional()
+  addressLine2?: string;
+
+  @ApiProperty({ example: 'Springfield' })
+  @IsString()
+  @IsNotEmpty()
+  city: string;
+
+  @ApiProperty({ example: 'IL' })
+  @IsString()
+  @IsNotEmpty()
+  state: string;
+
+  @ApiProperty({ example: '62701' })
+  @IsString()
+  @IsNotEmpty()
+  postalCode: string;
+
+  @ApiProperty({ example: 'US' })
+  @IsString()
+  @IsNotEmpty()
+  country: string;
+}
+
 export class CreateOrderDto {
   @ApiProperty({ type: [OrderItemDto] })
   @IsArray()
@@ -31,8 +69,8 @@ export class CreateOrderDto {
   @Type(() => OrderItemDto)
   items: OrderItemDto[];
 
-  @ApiProperty({ example: '123 Main St, Springfield, IL 62701' })
-  @IsString()
-  @IsNotEmpty()
-  shippingAddress: string;
+  @ApiProperty({ type: ShippingAddressDto })
+  @ValidateNested()
+  @Type(() => ShippingAddressDto)
+  shippingAddress: ShippingAddressDto;
 }

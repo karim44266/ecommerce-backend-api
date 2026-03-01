@@ -124,6 +124,8 @@ export const orders = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    trackingNumber: text('tracking_number'),
+    carrier: text('carrier'),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -153,6 +155,28 @@ export const orderItems = pgTable(
   },
   (table) => ({
     orderIdx: index('order_items_order_idx').on(table.orderId),
+  }),
+);
+
+// ─── Order Status History (Audit Trail) ──────────────────────────
+export const orderStatusHistory = pgTable(
+  'order_status_history',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    status: text('status').notNull(),
+    note: text('note'),
+    changedBy: uuid('changed_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    orderIdx: index('order_status_history_order_idx').on(table.orderId),
   }),
 );
 
@@ -239,9 +263,15 @@ export const inventoryAdjustmentsRelations = relations(inventoryAdjustments, ({ 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
   user: one(users, { fields: [orders.userId], references: [users.id] }),
   items: many(orderItems),
+  statusHistory: many(orderStatusHistory),
 }));
 
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({
   order: one(orders, { fields: [orderItems.orderId], references: [orders.id] }),
   product: one(products, { fields: [orderItems.productId], references: [products.id] }),
+}));
+
+export const orderStatusHistoryRelations = relations(orderStatusHistory, ({ one }) => ({
+  order: one(orders, { fields: [orderStatusHistory.orderId], references: [orders.id] }),
+  changedByUser: one(users, { fields: [orderStatusHistory.changedBy], references: [users.id] }),
 }));
