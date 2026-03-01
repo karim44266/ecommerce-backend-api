@@ -87,6 +87,17 @@ export class CategoriesService {
     });
   }
 
+  async findAllSimple() {
+    return this.db
+      .select({
+        id: schema.categories.id,
+        name: schema.categories.name,
+        slug: schema.categories.slug,
+      })
+      .from(schema.categories)
+      .orderBy(schema.categories.name);
+  }
+
   async findById(id: string) {
     const rows = await this.db
       .select({

@@ -32,6 +32,7 @@ import { AppService } from './app.service';
     OrdersModule,
     ProductsModule,
     UsersModule,
+    OrdersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, IsNumber, IsIn, Min, Max } from 'class-validator';
+import { IsOptional, IsString, IsInt, IsIn, IsUUID, Min, Max } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
 export class ProductQueryDto {
@@ -14,46 +14,27 @@ export class ProductQueryDto {
   @IsOptional()
   category?: string;
 
-  @ApiPropertyOptional({ example: 'uuid', description: 'Filter by category ID' })
-  @IsString()
+  @ApiPropertyOptional({ description: 'Filter by category ID' })
+  @IsUUID()
   @IsOptional()
   categoryId?: string;
 
-  @ApiPropertyOptional({ example: 'active', enum: ['active', 'draft', 'archived'], description: 'Filter by status' })
+  @ApiPropertyOptional({ example: 'active', description: 'Filter by status' })
   @IsString()
   @IsOptional()
-  @IsIn(['active', 'draft', 'archived'])
   status?: string;
 
-  @ApiPropertyOptional({ example: 10, description: 'Minimum price' })
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  minPrice?: number;
-
-  @ApiPropertyOptional({ example: 500, description: 'Maximum price' })
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  maxPrice?: number;
-
-  @ApiPropertyOptional({
-    example: 'price',
-    enum: ['name', 'price', 'createdAt', 'updatedAt'],
-    description: 'Sort field',
-  })
+  @ApiPropertyOptional({ example: 'createdAt', description: 'Sort field' })
   @IsString()
+  @IsIn(['name', 'price', 'inventory', 'createdAt', 'updatedAt', 'status'])
   @IsOptional()
-  @IsIn(['name', 'price', 'createdAt', 'updatedAt'])
-  sortBy?: string;
+  sortBy?: string = 'createdAt';
 
-  @ApiPropertyOptional({ example: 'asc', enum: ['asc', 'desc'], description: 'Sort direction' })
+  @ApiPropertyOptional({ example: 'desc', description: 'Sort direction' })
   @IsString()
-  @IsOptional()
   @IsIn(['asc', 'desc'])
-  sortOrder?: string;
+  @IsOptional()
+  sortOrder?: 'asc' | 'desc' = 'desc';
 
   @ApiPropertyOptional({ example: 1, default: 1 })
   @Type(() => Number)
