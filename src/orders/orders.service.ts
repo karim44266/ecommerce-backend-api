@@ -5,13 +5,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, ilike, sql, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { DATABASE_CONNECTION } from '../database/database.constants';
 import * as schema from '../database/schema';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderQueryDto } from './dto/order-query.dto';
-import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { UpdateOrderStatusDto, STATUS_TRANSITIONS } from './dto/update-order-status.dto';
 import { UpdateTrackingDto } from './dto/update-tracking.dto';
 
 @Injectable()
@@ -22,65 +22,14 @@ export class OrdersService {
   ) {}
 
   // ────────────────────────────────────────────────────────────────
-  //  Helpers
-  // ────────────────────────────────────────────────────────────────
-
-  /** Convert cents to dollars for API response. */
-  private centsToAmount(cents: number): number {
-    return cents / 100;
-  }
-
-  /** Format a raw order row + items + history into the API response shape. */
-  private formatOrder(
-    order: typeof schema.orders.$inferSelect,
-    items: (typeof schema.orderItems.$inferSelect)[],
-    history?: {
-      id: string;
-      status: string;
-      note: string | null;
-      changedBy: string | null;
-      createdAt: Date;
-      changedByEmail?: string | null;
-    }[],
-    customerEmail?: string | null,
-  ) {
-    return {
-      id: order.id,
-      userId: order.userId,
-      customerEmail: customerEmail ?? undefined,
-      status: order.status,
-      totalAmount: this.centsToAmount(order.totalAmount),
-      shippingAddress: order.shippingAddress,
-      trackingNumber: order.trackingNumber,
-      carrier: order.carrier,
-      items: items.map((it) => ({
-        id: it.id,
-        productId: it.productId,
-        name: it.name,
-        quantity: it.quantity,
-        unitPrice: this.centsToAmount(it.unitPrice),
-      })),
-      statusHistory: history?.map((h) => ({
-        id: h.id,
-        status: h.status,
-        note: h.note,
-        changedBy: h.changedBy,
-        changedByEmail: h.changedByEmail ?? undefined,
-        createdAt: h.createdAt,
-      })),
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt,
-    };
-  }
-
-  // ────────────────────────────────────────────────────────────────
   //  Create Order
   // ────────────────────────────────────────────────────────────────
 
   async create(userId: string, dto: CreateOrderDto) {
     // Look up all products in a single query
     const productIds = dto.items.map((i) => i.productId);
-    const products = await this.db
+
+    const dbProducts = await this.db
       .select()
       .from(schema.products)
       .where(
@@ -92,19 +41,12 @@ export class OrdersService {
 
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    // Validate stock & compute total
-    let totalCents = 0;
-    const orderItemValues: {
-      productId: string;
-      name: string;
-      quantity: number;
-      unitPrice: number;
-    }[] = [];
+    const productMap = new Map(dbProducts.map((p) => [p.id, p]));
 
     for (const item of dto.items) {
       const product = productMap.get(item.productId);
       if (!product) {
-        throw new BadRequestException(`Product ${item.productId} not found`);
+        throw new NotFoundException(`Product ${item.productId} not found`);
       }
       if (product.status !== 'active') {
         throw new BadRequestException(`Product "${product.name}" is not available`);
@@ -114,29 +56,60 @@ export class OrdersService {
           `Insufficient stock for "${product.name}" (available: ${product.inventory})`,
         );
       }
-      const priceCents = Math.round(Number(product.price) * 100);
-      totalCents += priceCents * item.quantity;
-      orderItemValues.push({
-        productId: product.id,
-        name: product.name!,
-        quantity: item.quantity,
-        unitPrice: priceCents,
-      });
     }
 
-    // Transactional insert: order + items + stock decrement + status history
-    return this.db.transaction(async (tx) => {
+    let totalCents = 0;
+    const itemsWithPrice = dto.items.map((item) => {
+      const product = productMap.get(item.productId)!;
+      const unitPriceCents = Math.round(Number(product.price) * 100);
+      totalCents += unitPriceCents * item.quantity;
+      return {
+        productId: item.productId,
+        productName: product.name,
+        quantity: item.quantity,
+        unitPriceCents,
+      };
+    });
+
+    const result = await this.db.transaction(async (tx) => {
+      for (const item of dto.items) {
+        const [updated] = await tx
+          .update(schema.products)
+          .set({
+            inventory: sql`${schema.products.inventory} - ${item.quantity}`,
+            updatedAt: new Date(),
+          })
+          .where(
+            sql`${schema.products.id} = ${item.productId} AND ${schema.products.inventory} >= ${item.quantity}`,
+          )
+          .returning({ id: schema.products.id });
+
+        if (!updated) {
+          throw new BadRequestException(
+            `Stock changed for product "${productMap.get(item.productId)?.name}". Please refresh and try again.`,
+          );
+        }
+      }
+
       const [order] = await tx
         .insert(schema.orders)
         .values({
           userId,
           status: 'PENDING_PAYMENT',
           totalAmount: totalCents,
-          shippingAddress: dto.shippingAddress,
+          shippingAddress: dto.shippingAddress as unknown as Record<string, unknown>,
         })
         .returning();
 
-      const items = await tx
+      const orderItemValues = itemsWithPrice.map((item) => ({
+        orderId: order.id,
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.unitPriceCents,
+      }));
+
+      const insertedItems = await tx
         .insert(schema.orderItems)
         .values(
           orderItemValues.map((v) => ({
@@ -146,16 +119,16 @@ export class OrdersService {
         )
         .returning();
 
-      // Decrement product inventory
-      for (const item of dto.items) {
-        await tx
-          .update(schema.products)
-          .set({
-            inventory: sql`${schema.products.inventory} - ${item.quantity}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.products.id, item.productId));
-      }
+      // Record initial status in audit trail
+      await tx.insert(schema.orderStatusHistory).values({
+        orderId: order.id,
+        status: 'PENDING_PAYMENT',
+        note: 'Order created',
+        changedBy: userId,
+      });
+
+      return { order, items: insertedItems };
+    });
 
       // Record initial status in history
       await tx.insert(schema.orderStatusHistory).values({
@@ -181,75 +154,90 @@ export class OrdersService {
   //  List Orders (admin or customer)
   // ────────────────────────────────────────────────────────────────
 
-  async findAll(query: OrderQueryDto, userId?: string, isAdmin = false) {
+  async findAll(userId: string, roles: string[], query: OrderQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const offset = (page - 1) * limit;
 
-    const conditions: SQL[] = [];
-
-    // Customers can only see their own orders
-    if (!isAdmin && userId) {
+    const conditions: ReturnType<typeof eq>[] = [];
+    if (!isAdmin) {
       conditions.push(eq(schema.orders.userId, userId));
     }
-
     if (query.status) {
       conditions.push(eq(schema.orders.status, query.status));
     }
 
-    if (query.search) {
-      // Search by order ID prefix or customer email
-      conditions.push(
-        sql`(${schema.orders.id}::text ILIKE ${'%' + query.search + '%'} OR ${schema.users.email} ILIKE ${'%' + query.search + '%'})`,
-      );
-    }
+    const whereClause =
+      conditions.length > 0 ? and(...conditions) : undefined;
 
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    // Build search condition (requires LEFT JOIN on users)
+    const searchCondition = query.search
+      ? or(
+          sql`${schema.orders.id}::text ILIKE ${'%' + query.search + '%'}`,
+          ilike(schema.users.email, `%${query.search}%`),
+        )
+      : undefined;
 
-    // Build ordering
-    const dir = query.sortOrder === 'asc' ? asc : desc;
+    const finalWhere = searchCondition
+      ? whereClause
+        ? and(whereClause, searchCondition)
+        : searchCondition
+      : whereClause;
+
+    // Count
+    const [countResult] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.orders)
+      .leftJoin(schema.users, eq(schema.orders.userId, schema.users.id))
+      .where(finalWhere);
+
+    const total = countResult?.count ?? 0;
+
+    // Sort
+    const sortDir = query.sortOrder === 'asc' ? asc : desc;
     const sortColumnMap: Record<string, unknown> = {
       createdAt: schema.orders.createdAt,
       updatedAt: schema.orders.updatedAt,
       totalAmount: schema.orders.totalAmount,
       status: schema.orders.status,
     };
-    const orderBy = dir(
+    const orderBy = sortDir(
       (sortColumnMap[query.sortBy ?? 'createdAt'] ?? schema.orders.createdAt) as typeof schema.orders.createdAt,
     );
 
-    // Count total
-    const [{ count: total }] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(schema.orders)
-      .leftJoin(schema.users, eq(schema.orders.userId, schema.users.id))
-      .where(whereClause);
-
-    // Fetch rows
+    // Fetch rows with user email
     const rows = await this.db
       .select({
         order: schema.orders,
         customerEmail: schema.users.email,
-        customerName: schema.users.name,
       })
       .from(schema.orders)
       .leftJoin(schema.users, eq(schema.orders.userId, schema.users.id))
-      .where(whereClause)
+      .where(finalWhere)
       .orderBy(orderBy)
       .limit(limit)
       .offset(offset);
 
+    // Fetch items for all orders in one query
+    const orderIds = rows.map((r) => r.order.id);
+    const allItems =
+      orderIds.length > 0
+        ? await this.db
+            .select()
+            .from(schema.orderItems)
+            .where(inArray(schema.orderItems.orderId, orderIds))
+        : [];
+
+    const itemsByOrder = new Map<string, (typeof allItems)[number][]>();
+    for (const item of allItems) {
+      const arr = itemsByOrder.get(item.orderId) ?? [];
+      arr.push(item);
+      itemsByOrder.set(item.orderId, arr);
+    }
+
     const data = rows.map((r) => ({
-      id: r.order.id,
-      userId: r.order.userId,
+      ...this.formatOrder(r.order, itemsByOrder.get(r.order.id) ?? []),
       customerEmail: r.customerEmail,
-      customerName: r.customerName,
-      status: r.order.status,
-      totalAmount: this.centsToAmount(r.order.totalAmount),
-      trackingNumber: r.order.trackingNumber,
-      carrier: r.order.carrier,
-      createdAt: r.order.createdAt,
-      updatedAt: r.order.updatedAt,
     }));
 
     return {
@@ -259,10 +247,10 @@ export class OrdersService {
   }
 
   // ────────────────────────────────────────────────────────────────
-  //  Get Order by ID (with items + status history)
+  //  Get Order Detail (owner or ADMIN)
   // ────────────────────────────────────────────────────────────────
 
-  async findById(id: string, userId?: string, isAdmin = false) {
+  async findById(orderId: string, userId: string, roles: string[]) {
     const rows = await this.db
       .select({
         order: schema.orders,
@@ -270,17 +258,16 @@ export class OrdersService {
       })
       .from(schema.orders)
       .leftJoin(schema.users, eq(schema.orders.userId, schema.users.id))
-      .where(eq(schema.orders.id, id))
+      .where(eq(schema.orders.id, orderId))
       .limit(1);
 
     if (rows.length === 0) {
       throw new NotFoundException('Order not found');
     }
 
-    const order = rows[0].order;
-
-    // Access control: customers can only see their own orders
-    if (!isAdmin && userId && order.userId !== userId) {
+    const { order, customerEmail } = rows[0];
+    const isAdmin = roles.includes('ADMIN');
+    if (!isAdmin && order.userId !== userId) {
       throw new ForbiddenException('You do not have access to this order');
     }
 
@@ -304,83 +291,212 @@ export class OrdersService {
       .where(eq(schema.orderStatusHistory.orderId, id))
       .orderBy(asc(schema.orderStatusHistory.createdAt));
 
-    const history = historyRows.map((h) => ({
-      id: h.history.id,
-      status: h.history.status,
-      note: h.history.note,
-      changedBy: h.history.changedBy,
-      changedByEmail: h.changedByEmail,
-      createdAt: h.history.createdAt,
-    }));
+    // Fetch audit trail
+    const history = await this.db
+      .select({
+        id: schema.orderStatusHistory.id,
+        status: schema.orderStatusHistory.status,
+        note: schema.orderStatusHistory.note,
+        changedBy: schema.orderStatusHistory.changedBy,
+        changedByEmail: schema.users.email,
+        createdAt: schema.orderStatusHistory.createdAt,
+      })
+      .from(schema.orderStatusHistory)
+      .leftJoin(
+        schema.users,
+        eq(schema.orderStatusHistory.changedBy, schema.users.id),
+      )
+      .where(eq(schema.orderStatusHistory.orderId, orderId))
+      .orderBy(asc(schema.orderStatusHistory.createdAt));
 
-    return this.formatOrder(order, items, history, rows[0].customerEmail);
+    return {
+      ...this.formatOrder(order, items),
+      customerEmail,
+      trackingNumber: order.trackingNumber,
+      carrier: order.carrier,
+      statusHistory: history.map((h) => ({
+        id: h.id,
+        status: h.status,
+        note: h.note,
+        changedBy: h.changedBy,
+        changedByEmail: h.changedByEmail,
+        createdAt: h.createdAt,
+      })),
+    };
   }
 
   // ────────────────────────────────────────────────────────────────
-  //  Update Order Status (admin)
+  //  Update Order Status (ADMIN only, with transition validation)
   // ────────────────────────────────────────────────────────────────
 
-  async updateStatus(orderId: string, dto: UpdateOrderStatusDto, changedBy: string) {
-    const order = await this.db
+  async updateStatus(
+    orderId: string,
+    adminUserId: string,
+    dto: UpdateOrderStatusDto,
+  ) {
+    const [order] = await this.db
       .select()
       .from(schema.orders)
       .where(eq(schema.orders.id, orderId))
       .limit(1);
 
-    if (order.length === 0) {
+    if (!order) {
       throw new NotFoundException('Order not found');
     }
 
-    await this.db.transaction(async (tx) => {
-      await tx
+    const currentStatus = order.status;
+    const allowedNext = STATUS_TRANSITIONS[currentStatus] ?? [];
+
+    if (!allowedNext.includes(dto.status)) {
+      throw new BadRequestException(
+        `Cannot transition from ${currentStatus} to ${dto.status}. Allowed: ${allowedNext.join(', ') || 'none (terminal state)'}`,
+      );
+    }
+
+    const result = await this.db.transaction(async (tx) => {
+      const [updated] = await tx
         .update(schema.orders)
-        .set({ status: dto.status, updatedAt: new Date() })
-        .where(eq(schema.orders.id, orderId));
+        .set({
+          status: dto.status,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.orders.id, orderId))
+        .returning();
 
       await tx.insert(schema.orderStatusHistory).values({
         orderId,
         status: dto.status,
-        note: dto.note ?? null,
-        changedBy,
+        note: dto.note ?? `Status changed from ${currentStatus} to ${dto.status}`,
+        changedBy: adminUserId,
       });
+
+      return updated;
     });
 
-    return this.findById(orderId, undefined, true);
+    const items = await this.db
+      .select()
+      .from(schema.orderItems)
+      .where(eq(schema.orderItems.orderId, orderId));
+
+    return this.formatOrder(result, items);
   }
 
   // ────────────────────────────────────────────────────────────────
-  //  Update Tracking Info (admin)
+  //  Update Tracking Info (ADMIN only)
   // ────────────────────────────────────────────────────────────────
 
-  async updateTracking(orderId: string, dto: UpdateTrackingDto, changedBy: string) {
-    const order = await this.db
+  async updateTracking(
+    orderId: string,
+    adminUserId: string,
+    dto: UpdateTrackingDto,
+  ) {
+    const [order] = await this.db
       .select()
       .from(schema.orders)
       .where(eq(schema.orders.id, orderId))
       .limit(1);
 
-    if (order.length === 0) {
+    if (!order) {
       throw new NotFoundException('Order not found');
     }
 
-    await this.db.transaction(async (tx) => {
-      await tx
+    const result = await this.db.transaction(async (tx) => {
+      const [updated] = await tx
         .update(schema.orders)
         .set({
           trackingNumber: dto.trackingNumber,
           carrier: dto.carrier,
           updatedAt: new Date(),
         })
-        .where(eq(schema.orders.id, orderId));
+        .where(eq(schema.orders.id, orderId))
+        .returning();
 
       await tx.insert(schema.orderStatusHistory).values({
         orderId,
-        status: order[0].status, // keep current status
-        note: dto.note ?? `Tracking updated: ${dto.carrier} ${dto.trackingNumber}`,
-        changedBy,
+        status: order.status, // keep current status
+        note:
+          dto.note ??
+          `Tracking updated: ${dto.carrier} ${dto.trackingNumber}`,
+        changedBy: adminUserId,
       });
+
+      return updated;
     });
 
-    return this.findById(orderId, undefined, true);
+    const items = await this.db
+      .select()
+      .from(schema.orderItems)
+      .where(eq(schema.orderItems.orderId, orderId));
+
+    return this.formatOrder(result, items);
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  //  Get Status History (audit trail)
+  // ────────────────────────────────────────────────────────────────
+
+  async getStatusHistory(orderId: string, userId: string, roles: string[]) {
+    // Verify access
+    const [order] = await this.db
+      .select()
+      .from(schema.orders)
+      .where(eq(schema.orders.id, orderId))
+      .limit(1);
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const isAdmin = roles.includes('ADMIN');
+    if (!isAdmin && order.userId !== userId) {
+      throw new ForbiddenException('You do not have access to this order');
+    }
+
+    const history = await this.db
+      .select({
+        id: schema.orderStatusHistory.id,
+        status: schema.orderStatusHistory.status,
+        note: schema.orderStatusHistory.note,
+        changedBy: schema.orderStatusHistory.changedBy,
+        changedByEmail: schema.users.email,
+        createdAt: schema.orderStatusHistory.createdAt,
+      })
+      .from(schema.orderStatusHistory)
+      .leftJoin(
+        schema.users,
+        eq(schema.orderStatusHistory.changedBy, schema.users.id),
+      )
+      .where(eq(schema.orderStatusHistory.orderId, orderId))
+      .orderBy(asc(schema.orderStatusHistory.createdAt));
+
+    return history;
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  //  Format helper
+  // ────────────────────────────────────────────────────────────────
+
+  private formatOrder(
+    order: typeof schema.orders.$inferSelect,
+    items: (typeof schema.orderItems.$inferSelect)[],
+  ) {
+    return {
+      id: order.id,
+      userId: order.userId,
+      status: order.status,
+      totalAmount: order.totalAmount / 100,
+      shippingAddress: order.shippingAddress,
+      trackingNumber: order.trackingNumber,
+      carrier: order.carrier,
+      items: items.map((item) => ({
+        id: item.id,
+        productId: item.productId,
+        name: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice / 100,
+      })),
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    };
   }
 }

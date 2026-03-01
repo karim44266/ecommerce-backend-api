@@ -38,7 +38,8 @@ interface JwtUser {
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
-  // ─── Create Order (authenticated customer) ──────────────────────
+  // ── Create ──────────────────────────────────────────────────────
+
   @Post()
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
@@ -47,7 +48,8 @@ export class OrdersController {
     return this.ordersService.create(req.user.userId, dto);
   }
 
-  // ─── List Orders ────────────────────────────────────────────────
+  // ── List ────────────────────────────────────────────────────────
+
   @Get()
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
@@ -87,13 +89,11 @@ export class OrdersController {
     return this.ordersService.updateStatus(id, dto, req.user.userId);
   }
 
-  // ─── Update Tracking Info (admin) ──────────────────────────────
-  @Post(':id/tracking')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Add/update tracking info (admin only)' })
-  @ApiOkResponse({ description: 'Updated order with tracking' })
+  // ── Detail ──────────────────────────────────────────────────────
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get single order (owner or ADMIN)' })
+  @ApiOkResponse({ description: 'Order detail with items, tracking & status history' })
   @ApiNotFoundResponse({ description: 'Order not found' })
   updateTracking(
     @Req() req: { user: JwtUser },
@@ -101,5 +101,56 @@ export class OrdersController {
     @Body() dto: UpdateTrackingDto,
   ) {
     return this.ordersService.updateTracking(id, dto, req.user.userId);
+  }
+
+  // ── Update Status (ADMIN) ──────────────────────────────────────
+
+  @Patch(':id/status')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Update order status (ADMIN only, validates transitions)' })
+  @ApiOkResponse({ description: 'Order with updated status' })
+  @ApiBadRequestResponse({ description: 'Invalid status transition' })
+  @ApiNotFoundResponse({ description: 'Order not found' })
+  updateStatus(
+    @Req() req: { user: JwtUser },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateOrderStatusDto,
+  ) {
+    return this.ordersService.updateStatus(id, req.user.userId, dto);
+  }
+
+  // ── Update Tracking (ADMIN) ────────────────────────────────────
+
+  @Post(':id/tracking')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Update tracking info (ADMIN only)' })
+  @ApiOkResponse({ description: 'Order with updated tracking info' })
+  @ApiNotFoundResponse({ description: 'Order not found' })
+  updateTracking(
+    @Req() req: { user: JwtUser },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTrackingDto,
+  ) {
+    return this.ordersService.updateTracking(id, req.user.userId, dto);
+  }
+
+  // ── Status History / Audit Trail ───────────────────────────────
+
+  @Get(':id/history')
+  @ApiOperation({ summary: 'Get order status history / audit trail' })
+  @ApiOkResponse({ description: 'Status change history with actor info' })
+  @ApiNotFoundResponse({ description: 'Order not found' })
+  @ApiForbiddenResponse({ description: 'Not your order' })
+  getStatusHistory(
+    @Req() req: { user: JwtUser },
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.ordersService.getStatusHistory(
+      id,
+      req.user.userId,
+      req.user.roles,
+    );
   }
 }

@@ -5,7 +5,6 @@ import {
   IsArray,
   IsInt,
   IsNotEmpty,
-  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -25,37 +24,37 @@ export class CreateOrderItemDto {
 }
 
 export class ShippingAddressDto {
-  @ApiProperty()
+  @ApiProperty({ example: 'John Doe' })
   @IsString()
   @IsNotEmpty()
   fullName: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: '123 Main St' })
   @IsString()
   @IsNotEmpty()
   addressLine1: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiPropertyOptional({ example: 'Apt 4B' })
   @IsString()
+  @IsOptional()
   addressLine2?: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'Springfield' })
   @IsString()
   @IsNotEmpty()
   city: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'IL' })
   @IsString()
   @IsNotEmpty()
   state: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: '62701' })
   @IsString()
   @IsNotEmpty()
   postalCode: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'US' })
   @IsString()
   @IsNotEmpty()
   country: string;
@@ -70,7 +69,6 @@ export class CreateOrderDto {
   items: CreateOrderItemDto[];
 
   @ApiProperty({ type: ShippingAddressDto })
-  @IsObject()
   @ValidateNested()
   @Type(() => ShippingAddressDto)
   shippingAddress: ShippingAddressDto;
