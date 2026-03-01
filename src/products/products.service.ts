@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, gte, ilike, lte, sql, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, sql, SQL } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { DATABASE_CONNECTION } from '../database/database.constants';
 import * as schema from '../database/schema';
@@ -56,19 +56,21 @@ export class ProductsService {
       conditions.push(ilike(schema.products.name, `%${escapeLike(query.search)}%`));
     }
 
-    // Category filter by ID (preferred)
+    if (query.status) {
+      conditions.push(eq(schema.products.status, query.status));
+    }
+
+    // Category filter — by ID directly or by name
     if (query.categoryId) {
       conditions.push(eq(schema.products.categoryId, query.categoryId));
     } else if (query.category) {
-      // Legacy: filter by category name
       const cat = await this.db.query.categories.findFirst({
         where: ilike(schema.categories.name, query.category),
       });
       if (cat) {
         conditions.push(eq(schema.products.categoryId, cat.id));
       } else {
-        // No matching category → force empty result
-        conditions.push(sql`false`);
+        return { data: [], meta: { total: 0, page, limit, totalPages: 0 } };
       }
     }
 
@@ -118,6 +120,30 @@ export class ProductsService {
       .from(schema.products)
       .where(whereClause);
 
+    // Sorting
+    const sortColumnMap: Record<string, any> = {
+      name: schema.products.name,
+      price: schema.products.price,
+      inventory: schema.products.inventory,
+      createdAt: schema.products.createdAt,
+      updatedAt: schema.products.updatedAt,
+      status: schema.products.status,
+    };
+    const sortCol = sortColumnMap[query.sortBy ?? 'createdAt'] ?? schema.products.createdAt;
+    const orderFn = query.sortOrder === 'asc' ? asc : desc;
+
+    // Count total matching rows
+    const [countResult] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.products)
+      .leftJoin(
+        schema.categories,
+        eq(schema.products.categoryId, schema.categories.id),
+      )
+      .where(whereClause);
+
+    const total = countResult?.count ?? 0;
+
     const rows = await this.db
       .select({
         product: schema.products,
@@ -129,7 +155,7 @@ export class ProductsService {
         eq(schema.products.categoryId, schema.categories.id),
       )
       .where(whereClause)
-      .orderBy(this.buildOrderBy(query))
+      .orderBy(orderFn(sortCol))
       .limit(limit)
       .offset(offset);
 

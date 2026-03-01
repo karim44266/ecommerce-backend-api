@@ -19,6 +19,7 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build /app/tsconfig.json ./tsconfig.json
 COPY --from=build /app/src/database/migrations ./src/database/migrations
+COPY --from=build /app/src/database/schema.ts ./src/database/schema.ts
 
 EXPOSE 3000
 

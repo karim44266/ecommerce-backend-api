@@ -4,7 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import path from 'node:path';
 import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
-import { InventoryModule } from './inventory/inventory.module';
+import { OrdersModule } from './orders/orders.module';
 import { ProductsModule } from './products/products.module';
 import { UsersModule } from './users/users.module';
 import { AppController } from './app.controller';
@@ -27,9 +27,9 @@ import { AppService } from './app.service';
     ]),
     AuthModule,
     CategoriesModule,
-    InventoryModule,
     ProductsModule,
     UsersModule,
+    OrdersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
