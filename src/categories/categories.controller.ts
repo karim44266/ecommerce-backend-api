@@ -47,13 +47,6 @@ export class CategoriesController {
     return this.categoriesService.findAllSimple();
   }
 
-  @Get('simple')
-  @ApiOperation({ summary: 'List categories (id, name, slug only — public)' })
-  @ApiOkResponse({ description: 'Simplified category list' })
-  findAllSimple() {
-    return this.categoriesService.findAllSimple();
-  }
-
   @Get(':id')
   @ApiOperation({ summary: 'Get category by ID' })
   @ApiOkResponse({ description: 'Category detail with product count', type: CategoryResponseDto })
