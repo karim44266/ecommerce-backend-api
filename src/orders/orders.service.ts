@@ -26,12 +26,20 @@ export class OrdersService {
   // ────────────────────────────────────────────────────────────────
 
   async create(userId: string, dto: CreateOrderDto) {
+    // Look up all products in a single query
     const productIds = dto.items.map((i) => i.productId);
 
     const dbProducts = await this.db
       .select()
       .from(schema.products)
-      .where(inArray(schema.products.id, productIds));
+      .where(
+        sql`${schema.products.id} IN (${sql.join(
+          productIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})`,
+      );
+
+    const productMap = new Map(products.map((p) => [p.id, p]));
 
     const productMap = new Map(dbProducts.map((p) => [p.id, p]));
 
@@ -41,13 +49,11 @@ export class OrdersService {
         throw new NotFoundException(`Product ${item.productId} not found`);
       }
       if (product.status !== 'active') {
-        throw new BadRequestException(
-          `Product "${product.name}" is not available for purchase`,
-        );
+        throw new BadRequestException(`Product "${product.name}" is not available`);
       }
       if (product.inventory < item.quantity) {
         throw new BadRequestException(
-          `Insufficient stock for "${product.name}": requested ${item.quantity}, available ${product.inventory}`,
+          `Insufficient stock for "${product.name}" (available: ${product.inventory})`,
         );
       }
     }
@@ -105,7 +111,12 @@ export class OrdersService {
 
       const insertedItems = await tx
         .insert(schema.orderItems)
-        .values(orderItemValues)
+        .values(
+          orderItemValues.map((v) => ({
+            orderId: order.id,
+            ...v,
+          })),
+        )
         .returning();
 
       // Record initial status in audit trail
@@ -119,7 +130,24 @@ export class OrdersService {
       return { order, items: insertedItems };
     });
 
-    return this.formatOrder(result.order, result.items);
+      // Record initial status in history
+      await tx.insert(schema.orderStatusHistory).values({
+        orderId: order.id,
+        status: 'PENDING_PAYMENT',
+        note: 'Order created',
+        changedBy: userId,
+      });
+
+      return this.formatOrder(order, items, [
+        {
+          id: '',
+          status: 'PENDING_PAYMENT',
+          note: 'Order created',
+          changedBy: userId,
+          createdAt: order.createdAt,
+        },
+      ]);
+    });
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -130,7 +158,6 @@ export class OrdersService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const offset = (page - 1) * limit;
-    const isAdmin = roles.includes('ADMIN');
 
     const conditions: ReturnType<typeof eq>[] = [];
     if (!isAdmin) {
@@ -244,10 +271,25 @@ export class OrdersService {
       throw new ForbiddenException('You do not have access to this order');
     }
 
+    // Fetch items
     const items = await this.db
       .select()
       .from(schema.orderItems)
-      .where(eq(schema.orderItems.orderId, orderId));
+      .where(eq(schema.orderItems.orderId, id));
+
+    // Fetch status history with user emails
+    const historyRows = await this.db
+      .select({
+        history: schema.orderStatusHistory,
+        changedByEmail: schema.users.email,
+      })
+      .from(schema.orderStatusHistory)
+      .leftJoin(
+        schema.users,
+        eq(schema.orderStatusHistory.changedBy, schema.users.id),
+      )
+      .where(eq(schema.orderStatusHistory.orderId, id))
+      .orderBy(asc(schema.orderStatusHistory.createdAt));
 
     // Fetch audit trail
     const history = await this.db

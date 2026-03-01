@@ -13,8 +13,6 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBearerAuth,
-  ApiBadRequestResponse,
-  ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -36,8 +34,6 @@ interface JwtUser {
 }
 
 @ApiTags('orders')
-@ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
@@ -45,31 +41,52 @@ export class OrdersController {
   // ── Create ──────────────────────────────────────────────────────
 
   @Post()
-  @ApiOperation({ summary: 'Create order from cart (authenticated user)' })
-  @ApiCreatedResponse({ description: 'Order created with PENDING_PAYMENT status' })
-  @ApiBadRequestResponse({ description: 'Validation error or insufficient stock' })
-  @ApiNotFoundResponse({ description: 'Product not found' })
-  create(
-    @Req() req: { user: JwtUser },
-    @Body() dto: CreateOrderDto,
-  ) {
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a new order (authenticated user)' })
+  create(@Req() req: { user: JwtUser }, @Body() dto: CreateOrderDto) {
     return this.ordersService.create(req.user.userId, dto);
   }
 
   // ── List ────────────────────────────────────────────────────────
 
   @Get()
-  @ApiOperation({ summary: 'List authenticated user orders (ADMIN sees all)' })
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List orders (admin sees all, customer sees own)' })
   @ApiOkResponse({ description: 'Paginated order list' })
-  findAll(
+  findAll(@Req() req: { user: JwtUser }, @Query() query: OrderQueryDto) {
+    const isAdmin = req.user.roles.includes('ADMIN');
+    return this.ordersService.findAll(query, req.user.userId, isAdmin);
+  }
+
+  // ─── Get Order Detail ───────────────────────────────────────────
+  @Get(':id')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get order detail with items and status history' })
+  @ApiOkResponse({ description: 'Order detail' })
+  @ApiNotFoundResponse({ description: 'Order not found' })
+  @ApiForbiddenResponse({ description: 'Access denied' })
+  findOne(@Req() req: { user: JwtUser }, @Param('id', ParseUUIDPipe) id: string) {
+    const isAdmin = req.user.roles.includes('ADMIN');
+    return this.ordersService.findById(id, req.user.userId, isAdmin);
+  }
+
+  // ─── Update Order Status (admin) ───────────────────────────────
+  @Patch(':id/status')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update order status (admin only)' })
+  @ApiOkResponse({ description: 'Updated order' })
+  @ApiNotFoundResponse({ description: 'Order not found' })
+  updateStatus(
     @Req() req: { user: JwtUser },
-    @Query() query: OrderQueryDto,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.ordersService.findAll(
-      req.user.userId,
-      req.user.roles,
-      query,
-    );
+    return this.ordersService.updateStatus(id, dto, req.user.userId);
   }
 
   // ── Detail ──────────────────────────────────────────────────────
@@ -78,12 +95,12 @@ export class OrdersController {
   @ApiOperation({ summary: 'Get single order (owner or ADMIN)' })
   @ApiOkResponse({ description: 'Order detail with items, tracking & status history' })
   @ApiNotFoundResponse({ description: 'Order not found' })
-  @ApiForbiddenResponse({ description: 'Not your order' })
-  findOne(
+  updateTracking(
     @Req() req: { user: JwtUser },
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTrackingDto,
   ) {
-    return this.ordersService.findById(id, req.user.userId, req.user.roles);
+    return this.ordersService.updateTracking(id, dto, req.user.userId);
   }
 
   // ── Update Status (ADMIN) ──────────────────────────────────────

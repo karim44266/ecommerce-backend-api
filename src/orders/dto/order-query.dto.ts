@@ -1,6 +1,18 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsInt, IsOptional, IsString, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
+
+const ORDER_STATUSES = [
+  'PENDING_PAYMENT',
+  'PAID',
+  'PROCESSING',
+  'SHIPPED',
+  'DELIVERED',
+  'CANCELLED',
+  'REFUNDED',
+  'FAILED',
+] as const;
 
 const ORDER_STATUSES = [
   'PENDING_PAYMENT',
@@ -14,17 +26,31 @@ const ORDER_STATUSES = [
 ] as const;
 
 export class OrderQueryDto {
-  @ApiPropertyOptional({ default: 1 })
-  @IsInt()
-  @Min(1)
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiProperty({ required: false, enum: ORDER_STATUSES })
+  @IsOptional()
+  @IsIn(ORDER_STATUSES)
+  status?: string;
+
+  @ApiProperty({ required: false, default: 1 })
   @IsOptional()
   @Type(() => Number)
-  page?: number;
-
-  @ApiPropertyOptional({ default: 20 })
   @IsInt()
   @Min(1)
-  @Max(100)
+  page?: number = 1;
+
+  @ApiProperty({ required: false, default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number = 20;
+
+  @ApiProperty({ required: false, default: 'createdAt', enum: ['createdAt', 'updatedAt', 'totalAmount', 'status'] })
   @IsOptional()
   @Type(() => Number)
   limit?: number;
