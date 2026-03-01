@@ -24,6 +24,7 @@ import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
+import { ProductListResponseDto, ProductResponseDto } from './dto/product-response.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
 
@@ -34,14 +35,14 @@ export class ProductsController {
 
   @Get()
   @ApiOperation({ summary: 'List products (public, with search/category/pagination)' })
-  @ApiOkResponse({ description: 'Product list' })
+  @ApiOkResponse({ description: 'Paginated product list', type: ProductListResponseDto })
   findAll(@Query() query: ProductQueryDto) {
     return this.productsService.findAll(query);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get product by ID (public)' })
-  @ApiOkResponse({ description: 'Product detail' })
+  @ApiOkResponse({ description: 'Product detail', type: ProductResponseDto })
   @ApiNotFoundResponse({ description: 'Product not found' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.productsService.findById(id);

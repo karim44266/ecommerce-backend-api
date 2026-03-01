@@ -3,7 +3,7 @@ import { IsOptional, IsString, IsInt, IsIn, IsUUID, Min, Max } from 'class-valid
 import { Transform, Type } from 'class-transformer';
 
 export class ProductQueryDto {
-  @ApiPropertyOptional({ example: 'headphones', description: 'Search by name' })
+  @ApiPropertyOptional({ example: 'headphones', description: 'Search by product name' })
   @IsString()
   @IsOptional()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
