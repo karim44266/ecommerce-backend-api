@@ -70,21 +70,9 @@ export class ProductsService {
       if (cat) {
         conditions.push(eq(schema.products.categoryId, cat.id));
       } else {
-        return { data: [], meta: { total: 0, page, limit, totalPages: 0 } };
+        // No matching category → force empty result set
+        conditions.push(sql`false`);
       }
-    }
-
-    // Status filter
-    if (query.status) {
-      conditions.push(eq(schema.products.status, query.status));
-    }
-
-    // Price range
-    if (query.minPrice !== undefined) {
-      conditions.push(gte(schema.products.price, query.minPrice.toFixed(2)));
-    }
-    if (query.maxPrice !== undefined) {
-      conditions.push(lte(schema.products.price, query.maxPrice.toFixed(2)));
     }
 
     return conditions;
@@ -113,12 +101,6 @@ export class ProductsService {
 
     const conditions = await this.buildConditions(query);
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-    // Total count
-    const [{ count: total }] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(schema.products)
-      .where(whereClause);
 
     // Sorting
     const sortColumnMap: Record<string, any> = {

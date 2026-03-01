@@ -1,6 +1,18 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsIn, IsInt, IsOptional, IsString, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
+
+const ORDER_STATUSES = [
+  'PENDING_PAYMENT',
+  'PAID',
+  'PROCESSING',
+  'SHIPPED',
+  'DELIVERED',
+  'CANCELLED',
+  'REFUNDED',
+  'FAILED',
+] as const;
 
 const ORDER_STATUSES = [
   'PENDING_PAYMENT',
@@ -40,11 +52,34 @@ export class OrderQueryDto {
 
   @ApiProperty({ required: false, default: 'createdAt', enum: ['createdAt', 'updatedAt', 'totalAmount', 'status'] })
   @IsOptional()
-  @IsIn(['createdAt', 'updatedAt', 'totalAmount', 'status'])
-  sortBy?: string = 'createdAt';
+  @Type(() => Number)
+  limit?: number;
 
-  @ApiProperty({ required: false, default: 'desc', enum: ['asc', 'desc'] })
+  @ApiPropertyOptional({ description: 'Filter by status', enum: ORDER_STATUSES })
+  @IsOptional()
+  @IsIn(ORDER_STATUSES)
+  status?: string;
+
+  @ApiPropertyOptional({ description: 'Search by order ID or customer email' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({
+    description: 'Sort field',
+    default: 'createdAt',
+    enum: ['createdAt', 'updatedAt', 'totalAmount', 'status'],
+  })
+  @IsOptional()
+  @IsIn(['createdAt', 'updatedAt', 'totalAmount', 'status'])
+  sortBy?: string;
+
+  @ApiPropertyOptional({
+    description: 'Sort direction',
+    default: 'desc',
+    enum: ['asc', 'desc'],
+  })
   @IsOptional()
   @IsIn(['asc', 'desc'])
-  sortOrder?: string = 'desc';
+  sortOrder?: string;
 }
