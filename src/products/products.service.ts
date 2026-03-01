@@ -70,7 +70,7 @@ export class ProductsService {
       if (cat) {
         conditions.push(eq(schema.products.categoryId, cat.id));
       } else {
-        // No matching category → force empty result set
+        // No matching category — return impossible condition to get 0 results
         conditions.push(sql`false`);
       }
     }

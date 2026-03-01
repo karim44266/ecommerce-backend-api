@@ -7,6 +7,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { OrdersModule } from './orders/orders.module';
 import { ProductsModule } from './products/products.module';
+import { ShipmentsModule } from './shipments/shipments.module';
 import { UsersModule } from './users/users.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -31,8 +32,8 @@ import { AppService } from './app.service';
     InventoryModule,
     OrdersModule,
     ProductsModule,
+    ShipmentsModule,
     UsersModule,
-    OrdersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
