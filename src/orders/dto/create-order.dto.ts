@@ -1,38 +1,77 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
   IsInt,
   IsNotEmpty,
+  IsObject,
+  IsOptional,
   IsString,
   IsUUID,
   Min,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 
-export class OrderItemDto {
-  @ApiProperty({ example: '123e4567-e89b-12d3-a456-426614174000' })
+export class CreateOrderItemDto {
+  @ApiProperty({ description: 'Product ID' })
   @IsUUID()
   productId: string;
 
-  @ApiProperty({ example: 2 })
+  @ApiProperty({ description: 'Quantity to order', minimum: 1 })
   @IsInt()
   @Min(1)
-  @Type(() => Number)
   quantity: number;
 }
 
+export class ShippingAddressDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  fullName: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  addressLine1: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  addressLine2?: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  city: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  state: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  postalCode: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  country: string;
+}
+
 export class CreateOrderDto {
-  @ApiProperty({ type: [OrderItemDto] })
+  @ApiProperty({ type: [CreateOrderItemDto] })
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => OrderItemDto)
-  items: OrderItemDto[];
+  @Type(() => CreateOrderItemDto)
+  items: CreateOrderItemDto[];
 
-  @ApiProperty({ example: '123 Main St, Springfield, IL 62701' })
-  @IsString()
-  @IsNotEmpty()
-  shippingAddress: string;
+  @ApiProperty({ type: ShippingAddressDto })
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ShippingAddressDto)
+  shippingAddress: ShippingAddressDto;
 }
