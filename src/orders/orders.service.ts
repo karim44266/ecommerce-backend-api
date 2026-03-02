@@ -39,8 +39,6 @@ export class OrdersService {
         )})`,
       );
 
-    const productMap = new Map(products.map((p) => [p.id, p]));
-
     const productMap = new Map(dbProducts.map((p) => [p.id, p]));
 
     for (const item of dto.items) {
@@ -111,12 +109,7 @@ export class OrdersService {
 
       const insertedItems = await tx
         .insert(schema.orderItems)
-        .values(
-          orderItemValues.map((v) => ({
-            orderId: order.id,
-            ...v,
-          })),
-        )
+        .values(orderItemValues)
         .returning();
 
       // Record initial status in audit trail
@@ -130,31 +123,14 @@ export class OrdersService {
       return { order, items: insertedItems };
     });
 
-      // Record initial status in history
-      await tx.insert(schema.orderStatusHistory).values({
-        orderId: order.id,
-        status: 'PENDING_PAYMENT',
-        note: 'Order created',
-        changedBy: userId,
-      });
-
-      return this.formatOrder(order, items, [
-        {
-          id: '',
-          status: 'PENDING_PAYMENT',
-          note: 'Order created',
-          changedBy: userId,
-          createdAt: order.createdAt,
-        },
-      ]);
-    });
+    return this.formatOrder(result.order, result.items);
   }
 
   // ────────────────────────────────────────────────────────────────
   //  List Orders (admin or customer)
   // ────────────────────────────────────────────────────────────────
 
-  async findAll(userId: string, roles: string[], query: OrderQueryDto) {
+  async findAll(query: OrderQueryDto, userId: string, isAdmin: boolean) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const offset = (page - 1) * limit;
@@ -250,7 +226,7 @@ export class OrdersService {
   //  Get Order Detail (owner or ADMIN)
   // ────────────────────────────────────────────────────────────────
 
-  async findById(orderId: string, userId: string, roles: string[]) {
+  async findById(orderId: string, userId: string, isAdmin: boolean) {
     const rows = await this.db
       .select({
         order: schema.orders,
@@ -266,7 +242,6 @@ export class OrdersService {
     }
 
     const { order, customerEmail } = rows[0];
-    const isAdmin = roles.includes('ADMIN');
     if (!isAdmin && order.userId !== userId) {
       throw new ForbiddenException('You do not have access to this order');
     }
@@ -275,23 +250,9 @@ export class OrdersService {
     const items = await this.db
       .select()
       .from(schema.orderItems)
-      .where(eq(schema.orderItems.orderId, id));
+      .where(eq(schema.orderItems.orderId, orderId));
 
     // Fetch status history with user emails
-    const historyRows = await this.db
-      .select({
-        history: schema.orderStatusHistory,
-        changedByEmail: schema.users.email,
-      })
-      .from(schema.orderStatusHistory)
-      .leftJoin(
-        schema.users,
-        eq(schema.orderStatusHistory.changedBy, schema.users.id),
-      )
-      .where(eq(schema.orderStatusHistory.orderId, id))
-      .orderBy(asc(schema.orderStatusHistory.createdAt));
-
-    // Fetch audit trail
     const history = await this.db
       .select({
         id: schema.orderStatusHistory.id,
@@ -331,8 +292,8 @@ export class OrdersService {
 
   async updateStatus(
     orderId: string,
-    adminUserId: string,
     dto: UpdateOrderStatusDto,
+    adminUserId: string,
   ) {
     const [order] = await this.db
       .select()
@@ -387,8 +348,8 @@ export class OrdersService {
 
   async updateTracking(
     orderId: string,
-    adminUserId: string,
     dto: UpdateTrackingDto,
+    adminUserId: string,
   ) {
     const [order] = await this.db
       .select()

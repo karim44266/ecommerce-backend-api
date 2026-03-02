@@ -11,6 +11,10 @@ import { DATABASE_CONNECTION } from '../database/database.constants';
 import * as schema from '../database/schema';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
 import { AssignShipmentDto } from './dto/assign-shipment.dto';
+import {
+  UpdateShipmentStatusDto,
+  SHIPMENT_STATUS_TRANSITIONS,
+} from './dto/update-shipment-status.dto';
 
 @Injectable()
 export class ShipmentsService {
@@ -258,6 +262,91 @@ export class ShipmentsService {
       .returning();
 
     return this.formatShipment(updated);
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  Update Shipment Status (ADMIN or owning STAFF)
+  // ──────────────────────────────────────────────────────────────
+
+  async updateStatus(
+    shipmentId: string,
+    dto: UpdateShipmentStatusDto,
+    userId: string,
+    isAdmin: boolean,
+  ) {
+    // 1) Fetch shipment
+    const [shipment] = await this.db
+      .select()
+      .from(schema.shipments)
+      .where(eq(schema.shipments.id, shipmentId))
+      .limit(1);
+
+    if (!shipment) {
+      throw new NotFoundException('Shipment not found');
+    }
+
+    // 2) STAFF can only update their own shipments
+    if (!isAdmin && shipment.staffUserId !== userId) {
+      throw new ForbiddenException('You can only update your own shipments');
+    }
+
+    // 3) Validate status transition
+    const currentStatus = shipment.status;
+    const allowed = SHIPMENT_STATUS_TRANSITIONS[currentStatus] ?? [];
+
+    if (!allowed.includes(dto.status)) {
+      throw new BadRequestException(
+        `Cannot transition shipment from ${currentStatus} to ${dto.status}. ` +
+          `Allowed: ${allowed.join(', ') || 'none (terminal state)'}`,
+      );
+    }
+
+    // 4) Map shipment status → order status for automatic sync
+    const orderStatusMap: Record<string, string> = {
+      IN_TRANSIT: 'SHIPPED',
+      DELIVERED: 'DELIVERED',
+      FAILED: 'FAILED',
+    };
+    const newOrderStatus = orderStatusMap[dto.status];
+
+    // 5) Transactionally update shipment + optionally sync order
+    const result = await this.db.transaction(async (tx) => {
+      const setFields: Record<string, unknown> = {
+        status: dto.status,
+        updatedAt: new Date(),
+      };
+
+      if (dto.status === 'DELIVERED') {
+        setFields.deliveredAt = new Date();
+      }
+
+      const [updated] = await tx
+        .update(schema.shipments)
+        .set(setFields)
+        .where(eq(schema.shipments.id, shipmentId))
+        .returning();
+
+      // Sync the parent order status
+      if (newOrderStatus) {
+        await tx
+          .update(schema.orders)
+          .set({ status: newOrderStatus, updatedAt: new Date() })
+          .where(eq(schema.orders.id, shipment.orderId));
+
+        await tx.insert(schema.orderStatusHistory).values({
+          orderId: shipment.orderId,
+          status: newOrderStatus,
+          note:
+            dto.note ??
+            `Shipment ${dto.status.replace(/_/g, ' ').toLowerCase()} – order moved to ${newOrderStatus}`,
+          changedBy: userId,
+        });
+      }
+
+      return updated;
+    });
+
+    return this.formatShipment(result);
   }
 
   // ──────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -35,14 +36,14 @@ interface JwtUser {
 
 @ApiTags('orders')
 @Controller('orders')
+@UseGuards(AuthGuard('jwt'))
+@ApiBearerAuth()
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   // ── Create ──────────────────────────────────────────────────────
 
   @Post()
-  @UseGuards(AuthGuard('jwt'))
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new order (authenticated user)' })
   create(@Req() req: { user: JwtUser }, @Body() dto: CreateOrderDto) {
     return this.ordersService.create(req.user.userId, dto);
@@ -51,8 +52,6 @@ export class OrdersController {
   // ── List ────────────────────────────────────────────────────────
 
   @Get()
-  @UseGuards(AuthGuard('jwt'))
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'List orders (admin sees all, customer sees own)' })
   @ApiOkResponse({ description: 'Paginated order list' })
   findAll(@Req() req: { user: JwtUser }, @Query() query: OrderQueryDto) {
@@ -60,10 +59,9 @@ export class OrdersController {
     return this.ordersService.findAll(query, req.user.userId, isAdmin);
   }
 
-  // ─── Get Order Detail ───────────────────────────────────────────
+  // ── Detail ──────────────────────────────────────────────────────
+
   @Get(':id')
-  @UseGuards(AuthGuard('jwt'))
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get order detail with items and status history' })
   @ApiOkResponse({ description: 'Order detail' })
   @ApiNotFoundResponse({ description: 'Order not found' })
@@ -73,13 +71,14 @@ export class OrdersController {
     return this.ordersService.findById(id, req.user.userId, isAdmin);
   }
 
-  // ─── Update Order Status (admin) ───────────────────────────────
+  // ── Update Status (ADMIN) ──────────────────────────────────────
+
   @Patch(':id/status')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Update order status (admin only)' })
   @ApiOkResponse({ description: 'Updated order' })
+  @ApiBadRequestResponse({ description: 'Invalid status transition' })
   @ApiNotFoundResponse({ description: 'Order not found' })
   updateStatus(
     @Req() req: { user: JwtUser },
@@ -89,43 +88,12 @@ export class OrdersController {
     return this.ordersService.updateStatus(id, dto, req.user.userId);
   }
 
-  // ── Detail ──────────────────────────────────────────────────────
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get single order (owner or ADMIN)' })
-  @ApiOkResponse({ description: 'Order detail with items, tracking & status history' })
-  @ApiNotFoundResponse({ description: 'Order not found' })
-  updateTracking(
-    @Req() req: { user: JwtUser },
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateTrackingDto,
-  ) {
-    return this.ordersService.updateTracking(id, dto, req.user.userId);
-  }
-
-  // ── Update Status (ADMIN) ──────────────────────────────────────
-
-  @Patch(':id/status')
-  @UseGuards(RolesGuard)
-  @Roles('ADMIN')
-  @ApiOperation({ summary: 'Update order status (ADMIN only, validates transitions)' })
-  @ApiOkResponse({ description: 'Order with updated status' })
-  @ApiBadRequestResponse({ description: 'Invalid status transition' })
-  @ApiNotFoundResponse({ description: 'Order not found' })
-  updateStatus(
-    @Req() req: { user: JwtUser },
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateOrderStatusDto,
-  ) {
-    return this.ordersService.updateStatus(id, req.user.userId, dto);
-  }
-
   // ── Update Tracking (ADMIN) ────────────────────────────────────
 
   @Post(':id/tracking')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Update tracking info (ADMIN only)' })
+  @ApiOperation({ summary: 'Update tracking info (admin only)' })
   @ApiOkResponse({ description: 'Order with updated tracking info' })
   @ApiNotFoundResponse({ description: 'Order not found' })
   updateTracking(
@@ -133,7 +101,7 @@ export class OrdersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateTrackingDto,
   ) {
-    return this.ordersService.updateTracking(id, req.user.userId, dto);
+    return this.ordersService.updateTracking(id, dto, req.user.userId);
   }
 
   // ── Status History / Audit Trail ───────────────────────────────

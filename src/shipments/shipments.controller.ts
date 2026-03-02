@@ -23,6 +23,7 @@ import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
 import { AssignShipmentDto } from './dto/assign-shipment.dto';
+import { UpdateShipmentStatusDto } from './dto/update-shipment-status.dto';
 import { ShipmentsService } from './shipments.service';
 
 interface JwtUser {
@@ -98,6 +99,23 @@ export class ShipmentsController {
   ) {
     const isAdmin = req.user.roles.includes('ADMIN');
     return this.shipmentsService.findById(id, req.user.userId, isAdmin);
+  }
+
+  // ─── Update Shipment Status (ADMIN or owning STAFF) ────────
+  @Patch(':id/status')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update shipment status (admin or assigned staff)' })
+  @ApiOkResponse({ description: 'Shipment status updated' })
+  @ApiNotFoundResponse({ description: 'Shipment not found' })
+  @ApiForbiddenResponse({ description: 'Staff can only update own shipments' })
+  updateStatus(
+    @Req() req: { user: JwtUser },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateShipmentStatusDto,
+  ) {
+    const isAdmin = req.user.roles.includes('ADMIN');
+    return this.shipmentsService.updateStatus(id, dto, req.user.userId, isAdmin);
   }
 
   // ─── Reassign Shipment (ADMIN) ─────────────────────────────
