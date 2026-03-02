@@ -26,7 +26,6 @@ export class OrdersService {
   // ────────────────────────────────────────────────────────────────
 
   async create(userId: string, dto: CreateOrderDto) {
-    // Look up all products in a single query
     const productIds = dto.items.map((i) => i.productId);
 
     const dbProducts = await this.db
@@ -38,8 +37,6 @@ export class OrdersService {
           sql`, `,
         )})`,
       );
-
-    const productMap = new Map(products.map((p) => [p.id, p]));
 
     const productMap = new Map(dbProducts.map((p) => [p.id, p]));
 
@@ -72,6 +69,7 @@ export class OrdersService {
     });
 
     const result = await this.db.transaction(async (tx) => {
+      // Optimistic inventory decrement
       for (const item of dto.items) {
         const [updated] = await tx
           .update(schema.products)
@@ -101,20 +99,15 @@ export class OrdersService {
         })
         .returning();
 
-      const orderItemValues = itemsWithPrice.map((item) => ({
-        orderId: order.id,
-        productId: item.productId,
-        productName: item.productName,
-        quantity: item.quantity,
-        unitPrice: item.unitPriceCents,
-      }));
-
       const insertedItems = await tx
         .insert(schema.orderItems)
         .values(
-          orderItemValues.map((v) => ({
+          itemsWithPrice.map((item) => ({
             orderId: order.id,
-            ...v,
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            unitPrice: item.unitPriceCents,
           })),
         )
         .returning();
@@ -130,31 +123,14 @@ export class OrdersService {
       return { order, items: insertedItems };
     });
 
-      // Record initial status in history
-      await tx.insert(schema.orderStatusHistory).values({
-        orderId: order.id,
-        status: 'PENDING_PAYMENT',
-        note: 'Order created',
-        changedBy: userId,
-      });
-
-      return this.formatOrder(order, items, [
-        {
-          id: '',
-          status: 'PENDING_PAYMENT',
-          note: 'Order created',
-          changedBy: userId,
-          createdAt: order.createdAt,
-        },
-      ]);
-    });
+    return this.formatOrder(result.order, result.items);
   }
 
   // ────────────────────────────────────────────────────────────────
   //  List Orders (admin or customer)
   // ────────────────────────────────────────────────────────────────
 
-  async findAll(userId: string, roles: string[], query: OrderQueryDto) {
+  async findAll(query: OrderQueryDto, userId: string, isAdmin: boolean) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const offset = (page - 1) * limit;
@@ -250,7 +226,7 @@ export class OrdersService {
   //  Get Order Detail (owner or ADMIN)
   // ────────────────────────────────────────────────────────────────
 
-  async findById(orderId: string, userId: string, roles: string[]) {
+  async findById(orderId: string, userId: string, isAdmin: boolean) {
     const rows = await this.db
       .select({
         order: schema.orders,
@@ -266,7 +242,6 @@ export class OrdersService {
     }
 
     const { order, customerEmail } = rows[0];
-    const isAdmin = roles.includes('ADMIN');
     if (!isAdmin && order.userId !== userId) {
       throw new ForbiddenException('You do not have access to this order');
     }
@@ -275,21 +250,7 @@ export class OrdersService {
     const items = await this.db
       .select()
       .from(schema.orderItems)
-      .where(eq(schema.orderItems.orderId, id));
-
-    // Fetch status history with user emails
-    const historyRows = await this.db
-      .select({
-        history: schema.orderStatusHistory,
-        changedByEmail: schema.users.email,
-      })
-      .from(schema.orderStatusHistory)
-      .leftJoin(
-        schema.users,
-        eq(schema.orderStatusHistory.changedBy, schema.users.id),
-      )
-      .where(eq(schema.orderStatusHistory.orderId, id))
-      .orderBy(asc(schema.orderStatusHistory.createdAt));
+      .where(eq(schema.orderItems.orderId, orderId));
 
     // Fetch audit trail
     const history = await this.db
@@ -312,8 +273,6 @@ export class OrdersService {
     return {
       ...this.formatOrder(order, items),
       customerEmail,
-      trackingNumber: order.trackingNumber,
-      carrier: order.carrier,
       statusHistory: history.map((h) => ({
         id: h.id,
         status: h.status,
@@ -331,8 +290,8 @@ export class OrdersService {
 
   async updateStatus(
     orderId: string,
-    adminUserId: string,
     dto: UpdateOrderStatusDto,
+    adminUserId: string,
   ) {
     const [order] = await this.db
       .select()
@@ -387,8 +346,8 @@ export class OrdersService {
 
   async updateTracking(
     orderId: string,
-    adminUserId: string,
     dto: UpdateTrackingDto,
+    adminUserId: string,
   ) {
     const [order] = await this.db
       .select()
@@ -413,7 +372,7 @@ export class OrdersService {
 
       await tx.insert(schema.orderStatusHistory).values({
         orderId,
-        status: order.status, // keep current status
+        status: order.status,
         note:
           dto.note ??
           `Tracking updated: ${dto.carrier} ${dto.trackingNumber}`,
@@ -436,7 +395,6 @@ export class OrdersService {
   // ────────────────────────────────────────────────────────────────
 
   async getStatusHistory(orderId: string, userId: string, roles: string[]) {
-    // Verify access
     const [order] = await this.db
       .select()
       .from(schema.orders)
