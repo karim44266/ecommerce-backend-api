@@ -24,14 +24,14 @@ export class OrderQueryDto {
   @IsIn(ORDER_STATUSES)
   status?: string;
 
-  @ApiPropertyOptional({ default: 1 })
+  @ApiPropertyOptional({ description: 'Page number', default: 1 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   page?: number = 1;
 
-  @ApiPropertyOptional({ default: 20 })
+  @ApiPropertyOptional({ description: 'Items per page', default: 20 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

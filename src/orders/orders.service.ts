@@ -26,7 +26,6 @@ export class OrdersService {
   // ────────────────────────────────────────────────────────────────
 
   async create(userId: string, dto: CreateOrderDto) {
-    // Look up all products in a single query
     const productIds = dto.items.map((i) => i.productId);
 
     const dbProducts = await this.db
@@ -70,6 +69,7 @@ export class OrdersService {
     });
 
     const result = await this.db.transaction(async (tx) => {
+      // Optimistic inventory decrement
       for (const item of dto.items) {
         const [updated] = await tx
           .update(schema.products)
@@ -99,17 +99,17 @@ export class OrdersService {
         })
         .returning();
 
-      const orderItemValues = itemsWithPrice.map((item) => ({
-        orderId: order.id,
-        productId: item.productId,
-        productName: item.productName,
-        quantity: item.quantity,
-        unitPrice: item.unitPriceCents,
-      }));
-
       const insertedItems = await tx
         .insert(schema.orderItems)
-        .values(orderItemValues)
+        .values(
+          itemsWithPrice.map((item) => ({
+            orderId: order.id,
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            unitPrice: item.unitPriceCents,
+          })),
+        )
         .returning();
 
       // Record initial status in audit trail
@@ -252,7 +252,7 @@ export class OrdersService {
       .from(schema.orderItems)
       .where(eq(schema.orderItems.orderId, orderId));
 
-    // Fetch status history with user emails
+    // Fetch audit trail
     const history = await this.db
       .select({
         id: schema.orderStatusHistory.id,
@@ -273,8 +273,6 @@ export class OrdersService {
     return {
       ...this.formatOrder(order, items),
       customerEmail,
-      trackingNumber: order.trackingNumber,
-      carrier: order.carrier,
       statusHistory: history.map((h) => ({
         id: h.id,
         status: h.status,
@@ -374,7 +372,7 @@ export class OrdersService {
 
       await tx.insert(schema.orderStatusHistory).values({
         orderId,
-        status: order.status, // keep current status
+        status: order.status,
         note:
           dto.note ??
           `Tracking updated: ${dto.carrier} ${dto.trackingNumber}`,
@@ -397,7 +395,6 @@ export class OrdersService {
   // ────────────────────────────────────────────────────────────────
 
   async getStatusHistory(orderId: string, userId: string, roles: string[]) {
-    // Verify access
     const [order] = await this.db
       .select()
       .from(schema.orders)

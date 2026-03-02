@@ -62,7 +62,7 @@ export class OrdersController {
   // ── Detail ──────────────────────────────────────────────────────
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get order detail with items and status history' })
+  @ApiOperation({ summary: 'Get order detail with items, tracking & status history' })
   @ApiOkResponse({ description: 'Order detail' })
   @ApiNotFoundResponse({ description: 'Order not found' })
   @ApiForbiddenResponse({ description: 'Access denied' })
@@ -76,7 +76,7 @@ export class OrdersController {
   @Patch(':id/status')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Update order status (admin only)' })
+  @ApiOperation({ summary: 'Update order status (ADMIN only, validates transitions)' })
   @ApiOkResponse({ description: 'Updated order' })
   @ApiBadRequestResponse({ description: 'Invalid status transition' })
   @ApiNotFoundResponse({ description: 'Order not found' })

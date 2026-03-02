@@ -190,19 +190,24 @@ export const inventoryAdjustmentsRelations = relations(inventoryAdjustments, ({ 
   }),
 }));
 
-// ─── Orders ──────────────────────────────────────────────────────
-export const orders = pgTable(
-  'orders',
+// ─── Shipments ───────────────────────────────────────────────────
+export const shipments = pgTable(
+  'shipments',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
+    orderId: uuid('order_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    status: text('status').notNull().default('PENDING_PAYMENT'),
-    totalAmount: integer('total_amount').notNull(), // stored in cents
-    shippingAddress: jsonb('shipping_address'),
+      .unique()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    staffUserId: uuid('staff_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    status: text('status').notNull().default('ASSIGNED'),
     trackingNumber: text('tracking_number'),
-    carrier: text('carrier'),
+    assignedAt: timestamp('assigned_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -211,53 +216,9 @@ export const orders = pgTable(
       .defaultNow(),
   },
   (table) => ({
-    userIdx: index('orders_user_idx').on(table.userId),
-    statusIdx: index('orders_status_idx').on(table.status),
-  }),
-);
-
-// ─── Order Items ─────────────────────────────────────────────────
-export const orderItems = pgTable(
-  'order_items',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    orderId: uuid('order_id')
-      .notNull()
-      .references(() => orders.id, { onDelete: 'cascade' }),
-    productId: uuid('product_id')
-      .notNull()
-      .references(() => products.id, { onDelete: 'restrict' }),
-    productName: text('product_name').notNull(),
-    quantity: integer('quantity').notNull(),
-    unitPrice: integer('unit_price').notNull(), // stored in cents
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => ({
-    orderIdx: index('order_items_order_idx').on(table.orderId),
-  }),
-);
-
-// ─── Order Status History (audit trail) ──────────────────────────
-export const orderStatusHistory = pgTable(
-  'order_status_history',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    orderId: uuid('order_id')
-      .notNull()
-      .references(() => orders.id, { onDelete: 'cascade' }),
-    status: text('status').notNull(),
-    note: text('note'),
-    changedBy: uuid('changed_by').references(() => users.id, {
-      onDelete: 'set null',
-    }),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => ({
-    orderIdx: index('order_status_history_order_idx').on(table.orderId),
+    orderIdx: index('shipments_order_idx').on(table.orderId),
+    staffIdx: index('shipments_staff_idx').on(table.staffUserId),
+    statusIdx: index('shipments_status_idx').on(table.status),
   }),
 );
 
@@ -301,7 +262,10 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   }),
   items: many(orderItems),
   statusHistory: many(orderStatusHistory),
-  shipment: one(shipments),
+  shipment: one(shipments, {
+    fields: [orders.id],
+    references: [shipments.orderId],
+  }),
 }));
 
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({
@@ -326,6 +290,7 @@ export const orderStatusHistoryRelations = relations(orderStatusHistory, ({ one 
   }),
 }));
 
+// ─── Shipment Relations ──────────────────────────────────────────
 export const shipmentsRelations = relations(shipments, ({ one }) => ({
   order: one(orders, {
     fields: [shipments.orderId],
