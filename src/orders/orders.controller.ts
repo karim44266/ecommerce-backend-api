@@ -93,7 +93,7 @@ export class OrdersController {
   @Post(':id/tracking')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Update tracking info (ADMIN only)' })
+  @ApiOperation({ summary: 'Update tracking info (admin only)' })
   @ApiOkResponse({ description: 'Order with updated tracking info' })
   @ApiNotFoundResponse({ description: 'Order not found' })
   updateTracking(
