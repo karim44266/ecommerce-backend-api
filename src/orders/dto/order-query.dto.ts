@@ -1,18 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsOptional, IsString, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
-
-const ORDER_STATUSES = [
-  'PENDING_PAYMENT',
-  'PAID',
-  'PROCESSING',
-  'SHIPPED',
-  'DELIVERED',
-  'CANCELLED',
-  'REFUNDED',
-  'FAILED',
-] as const;
+import { Type } from 'class-transformer';
 
 const ORDER_STATUSES = [
   'PENDING_PAYMENT',
@@ -26,44 +14,29 @@ const ORDER_STATUSES = [
 ] as const;
 
 export class OrderQueryDto {
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional({ description: 'Search by order ID or customer email' })
   @IsOptional()
   @IsString()
   search?: string;
-
-  @ApiProperty({ required: false, enum: ORDER_STATUSES })
-  @IsOptional()
-  @IsIn(ORDER_STATUSES)
-  status?: string;
-
-  @ApiProperty({ required: false, default: 1 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number = 1;
-
-  @ApiProperty({ required: false, default: 20 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  limit?: number = 20;
-
-  @ApiProperty({ required: false, default: 'createdAt', enum: ['createdAt', 'updatedAt', 'totalAmount', 'status'] })
-  @IsOptional()
-  @Type(() => Number)
-  limit?: number;
 
   @ApiPropertyOptional({ description: 'Filter by status', enum: ORDER_STATUSES })
   @IsOptional()
   @IsIn(ORDER_STATUSES)
   status?: string;
 
-  @ApiPropertyOptional({ description: 'Search by order ID or customer email' })
+  @ApiPropertyOptional({ description: 'Page number', default: 1 })
   @IsOptional()
-  @IsString()
-  search?: string;
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ description: 'Items per page', default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number = 20;
 
   @ApiPropertyOptional({
     description: 'Sort field',
@@ -72,7 +45,7 @@ export class OrderQueryDto {
   })
   @IsOptional()
   @IsIn(['createdAt', 'updatedAt', 'totalAmount', 'status'])
-  sortBy?: string;
+  sortBy?: string = 'createdAt';
 
   @ApiPropertyOptional({
     description: 'Sort direction',
@@ -81,5 +54,5 @@ export class OrderQueryDto {
   })
   @IsOptional()
   @IsIn(['asc', 'desc'])
-  sortOrder?: string;
+  sortOrder?: string = 'desc';
 }
