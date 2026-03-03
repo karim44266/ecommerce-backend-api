@@ -190,24 +190,19 @@ export const inventoryAdjustmentsRelations = relations(inventoryAdjustments, ({ 
   }),
 }));
 
-// ─── Shipments ───────────────────────────────────────────────────
-export const shipments = pgTable(
-  'shipments',
+// ─── Orders ──────────────────────────────────────────────────────
+export const orders = pgTable(
+  'orders',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    orderId: uuid('order_id')
-      .notNull()
-      .unique()
-      .references(() => orders.id, { onDelete: 'cascade' }),
-    staffUserId: uuid('staff_user_id')
+    userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
-    status: text('status').notNull().default('ASSIGNED'),
+    status: text('status').notNull().default('PENDING_PAYMENT'),
+    totalAmount: numeric('total_amount', { precision: 12, scale: 2 }).notNull(),
+    shippingAddress: jsonb('shipping_address'),
     trackingNumber: text('tracking_number'),
-    assignedAt: timestamp('assigned_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    carrier: text('carrier'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -216,9 +211,52 @@ export const shipments = pgTable(
       .defaultNow(),
   },
   (table) => ({
-    orderIdx: index('shipments_order_idx').on(table.orderId),
-    staffIdx: index('shipments_staff_idx').on(table.staffUserId),
-    statusIdx: index('shipments_status_idx').on(table.status),
+    userIdx: index('orders_user_idx').on(table.userId),
+    statusIdx: index('orders_status_idx').on(table.status),
+  }),
+);
+
+export const orderItems = pgTable(
+  'order_items',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'restrict' }),
+    productName: text('product_name').notNull(),
+    quantity: integer('quantity').notNull(),
+    unitPrice: numeric('unit_price', { precision: 12, scale: 2 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    orderIdx: index('order_items_order_idx').on(table.orderId),
+    productIdx: index('order_items_product_idx').on(table.productId),
+  }),
+);
+
+export const orderStatusHistory = pgTable(
+  'order_status_history',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    status: text('status').notNull(),
+    note: text('note'),
+    changedBy: uuid('changed_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    orderIdx: index('order_status_history_order_idx').on(table.orderId),
   }),
 );
 

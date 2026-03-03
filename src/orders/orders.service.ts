@@ -94,7 +94,7 @@ export class OrdersService {
         .values({
           userId,
           status: 'PENDING_PAYMENT',
-          totalAmount: totalCents,
+          totalAmount: String(totalCents),
           shippingAddress: dto.shippingAddress as unknown as Record<string, unknown>,
         })
         .returning();
@@ -107,7 +107,7 @@ export class OrdersService {
             productId: item.productId,
             productName: item.productName,
             quantity: item.quantity,
-            unitPrice: item.unitPriceCents,
+            unitPrice: String(item.unitPriceCents),
           })),
         )
         .returning();
@@ -442,7 +442,7 @@ export class OrdersService {
       id: order.id,
       userId: order.userId,
       status: order.status,
-      totalAmount: order.totalAmount / 100,
+      totalAmount: Number(order.totalAmount) / 100,
       shippingAddress: order.shippingAddress,
       trackingNumber: order.trackingNumber,
       carrier: order.carrier,
@@ -451,7 +451,7 @@ export class OrdersService {
         productId: item.productId,
         name: item.productName,
         quantity: item.quantity,
-        unitPrice: item.unitPrice / 100,
+        unitPrice: Number(item.unitPrice) / 100,
       })),
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
