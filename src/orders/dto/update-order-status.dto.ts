@@ -2,11 +2,11 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export const ORDER_STATUSES = [
-  'PENDING_PAYMENT',
-  'PAID',
+  'PENDING',
+  'ACCEPTED',
   'PROCESSING',
-  'SHIPPED',
   'DELIVERED',
+  'COMPLETED',
   'CANCELLED',
   'REFUNDED',
   'FAILED',
@@ -19,14 +19,14 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
  * Key = current status, Value = allowed next statuses.
  */
 export const STATUS_TRANSITIONS: Record<string, string[]> = {
-  PENDING_PAYMENT: ['PAID', 'CANCELLED', 'FAILED'],
-  PAID: ['PROCESSING', 'CANCELLED', 'REFUNDED'],
-  PROCESSING: ['SHIPPED', 'CANCELLED'],
-  SHIPPED: ['DELIVERED', 'FAILED'],
-  DELIVERED: ['REFUNDED'],
+  PENDING: ['ACCEPTED', 'CANCELLED'],
+  ACCEPTED: ['PROCESSING', 'CANCELLED'],
+  PROCESSING: ['DELIVERED', 'CANCELLED'],
+  DELIVERED: ['COMPLETED', 'REFUNDED'],
+  COMPLETED: [],
   CANCELLED: [],
   REFUNDED: [],
-  FAILED: ['PROCESSING'], // allow retry
+  FAILED: ['PROCESSING'],
 };
 
 export class UpdateOrderStatusDto {

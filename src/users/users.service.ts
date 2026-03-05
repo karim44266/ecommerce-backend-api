@@ -46,6 +46,33 @@ export class UsersService {
     if (!updated) {
       throw new NotFoundException('User not found');
     }
+
+    // Sync the user_roles junction table so the JWT includes the correct role
+    const roleName = role.toUpperCase();
+    const roleRow = await this.db.query.roles.findFirst({
+      where: eq(schema.roles.name, roleName),
+    });
+    if (roleRow) {
+      // Remove all existing roles for this user
+      await this.db
+        .delete(schema.userRoles)
+        .where(eq(schema.userRoles.userId, id));
+      // Assign the new role + CUSTOMER as a base role
+      const rolesToAssign = [roleRow.id];
+      if (roleName !== 'CUSTOMER') {
+        const customerRole = await this.db.query.roles.findFirst({
+          where: eq(schema.roles.name, 'CUSTOMER'),
+        });
+        if (customerRole) {
+          rolesToAssign.push(customerRole.id);
+        }
+      }
+      await this.db
+        .insert(schema.userRoles)
+        .values(rolesToAssign.map((roleId) => ({ userId: id, roleId })))
+        .onConflictDoNothing();
+    }
+
     return this.sanitize(updated);
   }
 

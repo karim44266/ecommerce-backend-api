@@ -56,7 +56,7 @@ export class ShipmentsService {
   // ──────────────────────────────────────────────────────────────
 
   async create(dto: CreateShipmentDto) {
-    // 1) Validate order exists and has PAID or PROCESSING status
+    // 1) Validate order exists and has ACCEPTED or PROCESSING status
     const [order] = await this.db
       .select()
       .from(schema.orders)
@@ -67,9 +67,9 @@ export class ShipmentsService {
       throw new NotFoundException('Order not found');
     }
 
-    if (!['PAID', 'PROCESSING'].includes(order.status)) {
+    if (!['ACCEPTED', 'PROCESSING'].includes(order.status)) {
       throw new BadRequestException(
-        `Order must be in PAID or PROCESSING status to create a shipment (current: ${order.status})`,
+        `Order must be in ACCEPTED or PROCESSING status to create a shipment (current: ${order.status})`,
       );
     }
 
@@ -111,8 +111,8 @@ export class ShipmentsService {
         })
         .returning();
 
-      // Transition order to PROCESSING if it's still PAID
-      if (order.status === 'PAID') {
+      // Transition order to PROCESSING if it's still ACCEPTED
+      if (order.status === 'ACCEPTED') {
         await tx
           .update(schema.orders)
           .set({ status: 'PROCESSING', updatedAt: new Date() })
@@ -229,10 +229,10 @@ export class ShipmentsService {
       throw new NotFoundException('Shipment not found');
     }
 
-    // Can only reassign shipments that are ASSIGNED (not yet in transit/delivered)
-    if (shipment.status !== 'ASSIGNED') {
+    // Can only reassign shipments that are ASSIGNED or PENDING (declined)
+    if (!['ASSIGNED', 'PENDING'].includes(shipment.status)) {
       throw new BadRequestException(
-        `Can only reassign shipments in ASSIGNED status (current: ${shipment.status})`,
+        `Can only reassign shipments in ASSIGNED or PENDING status (current: ${shipment.status})`,
       );
     }
 
@@ -255,6 +255,7 @@ export class ShipmentsService {
       .update(schema.shipments)
       .set({
         staffUserId: dto.staffUserId,
+        status: 'ASSIGNED',
         assignedAt: new Date(),
         updatedAt: new Date(),
       })
@@ -302,8 +303,9 @@ export class ShipmentsService {
     }
 
     // 4) Map shipment status → order status for automatic sync
+    //    IN_TRANSIT (staff accepts) does NOT change the order — it stays PROCESSING.
+    //    Only DELIVERED and FAILED sync to the parent order.
     const orderStatusMap: Record<string, string> = {
-      IN_TRANSIT: 'SHIPPED',
       DELIVERED: 'DELIVERED',
       FAILED: 'FAILED',
     };
@@ -368,7 +370,7 @@ export class ShipmentsService {
   }
 
   // ──────────────────────────────────────────────────────────────
-  //  Get Assignable Orders (PAID/PROCESSING without a shipment)
+  //  Get Assignable Orders (ACCEPTED/PROCESSING without a shipment)
   // ──────────────────────────────────────────────────────────────
 
   async getAssignableOrders() {
@@ -385,7 +387,7 @@ export class ShipmentsService {
       .leftJoin(schema.shipments, eq(schema.orders.id, schema.shipments.orderId))
       .where(
         and(
-          sql`${schema.orders.status} IN ('PAID', 'PROCESSING')`,
+          sql`${schema.orders.status} IN ('ACCEPTED', 'PROCESSING')`,
           sql`${schema.shipments.id} IS NULL`,
         ),
       )

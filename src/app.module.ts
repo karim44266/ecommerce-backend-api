@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { OrdersModule } from './orders/orders.module';
+// PaymentsModule removed – cash on delivery, no online payments
 import { ProductsModule } from './products/products.module';
 import { ShipmentsModule } from './shipments/shipments.module';
 import { UsersModule } from './users/users.module';
