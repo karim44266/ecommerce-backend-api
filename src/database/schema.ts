@@ -197,9 +197,9 @@ export const orders = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'restrict' }),
-    status: text('status').notNull().default('PENDING_PAYMENT'),
-    totalAmount: numeric('total_amount', { precision: 12, scale: 2 }).notNull(),
+      .references(() => users.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().default('PENDING'),
+    totalAmount: integer('total_amount').notNull(),
     shippingAddress: jsonb('shipping_address'),
     trackingNumber: text('tracking_number'),
     carrier: text('carrier'),
@@ -226,9 +226,52 @@ export const orderItems = pgTable(
     productId: uuid('product_id')
       .notNull()
       .references(() => products.id, { onDelete: 'restrict' }),
-    productName: text('product_name').notNull(),
+    name: text('product_name').notNull(),
     quantity: integer('quantity').notNull(),
-    unitPrice: numeric('unit_price', { precision: 12, scale: 2 }).notNull(),
+    unitPrice: integer('unit_price').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    orderIdx: index('order_items_order_idx').on(table.orderId),
+  }),
+);
+
+export const orderStatusHistory = pgTable(
+  'order_status_history',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    status: text('status').notNull(),
+    note: text('note'),
+    changedBy: uuid('changed_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    orderIdx: index('order_status_history_order_idx').on(table.orderId),
+  }),
+);
+
+// ─── Payments ────────────────────────────────────────────────────
+export const payments = pgTable(
+  'payments',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    orderId: uuid('order_id')
+      .notNull()
+      .unique()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    amount: integer('amount').notNull(),
+    status: text('status').notNull().default('PENDING'),
+    provider: text('provider').notNull().default('mock'),
+    providerPaymentId: text('provider_payment_id'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -256,7 +299,8 @@ export const orderStatusHistory = pgTable(
       .defaultNow(),
   },
   (table) => ({
-    orderIdx: index('order_status_history_order_idx').on(table.orderId),
+    orderIdx: index('payments_order_idx').on(table.orderId),
+    statusIdx: index('payments_status_idx').on(table.status),
   }),
 );
 
@@ -300,6 +344,10 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   }),
   items: many(orderItems),
   statusHistory: many(orderStatusHistory),
+  payment: one(payments, {
+    fields: [orders.id],
+    references: [payments.orderId],
+  }),
   shipment: one(shipments, {
     fields: [orders.id],
     references: [shipments.orderId],
@@ -337,5 +385,13 @@ export const shipmentsRelations = relations(shipments, ({ one }) => ({
   staff: one(users, {
     fields: [shipments.staffUserId],
     references: [users.id],
+  }),
+}));
+
+// ─── Payment Relations ───────────────────────────────────────────
+export const paymentsRelations = relations(payments, ({ one }) => ({
+  order: one(orders, {
+    fields: [payments.orderId],
+    references: [orders.id],
   }),
 }));

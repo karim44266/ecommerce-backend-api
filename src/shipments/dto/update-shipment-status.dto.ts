@@ -3,6 +3,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /** All valid shipment statuses */
 export const SHIPMENT_STATUSES = [
+  'PENDING',
   'ASSIGNED',
   'IN_TRANSIT',
   'DELIVERED',
@@ -15,14 +16,18 @@ export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number];
 /**
  * Allowed status transitions for shipments.
  *
- *  ASSIGNED   → IN_TRANSIT | FAILED
+ *  PENDING    → (admin reassigns → ASSIGNED)
+ *  ASSIGNED   → IN_TRANSIT | PENDING | FAILED
+ *                IN_TRANSIT = staff accepts
+ *                PENDING    = staff declines
  *  IN_TRANSIT → DELIVERED  | FAILED
  *  FAILED     → RETURNED   | IN_TRANSIT   (retry or return)
  *  DELIVERED  → (terminal)
  *  RETURNED   → (terminal)
  */
 export const SHIPMENT_STATUS_TRANSITIONS: Record<string, string[]> = {
-  ASSIGNED: ['IN_TRANSIT', 'FAILED'],
+  PENDING: [],
+  ASSIGNED: ['IN_TRANSIT', 'PENDING', 'FAILED'],
   IN_TRANSIT: ['DELIVERED', 'FAILED'],
   FAILED: ['RETURNED', 'IN_TRANSIT'],
   DELIVERED: [],

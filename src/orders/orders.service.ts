@@ -93,8 +93,8 @@ export class OrdersService {
         .insert(schema.orders)
         .values({
           userId,
-          status: 'PENDING_PAYMENT',
-          totalAmount: String(totalCents),
+          status: 'PENDING',
+          totalAmount: totalCents,
           shippingAddress: dto.shippingAddress as unknown as Record<string, unknown>,
         })
         .returning();
@@ -105,7 +105,7 @@ export class OrdersService {
           itemsWithPrice.map((item) => ({
             orderId: order.id,
             productId: item.productId,
-            productName: item.productName,
+            name: item.productName,
             quantity: item.quantity,
             unitPrice: String(item.unitPriceCents),
           })),
@@ -115,8 +115,8 @@ export class OrdersService {
       // Record initial status in audit trail
       await tx.insert(schema.orderStatusHistory).values({
         orderId: order.id,
-        status: 'PENDING_PAYMENT',
-        note: 'Order created',
+        status: 'PENDING',
+        note: 'Order placed – awaiting admin confirmation',
         changedBy: userId,
       });
 
@@ -449,7 +449,7 @@ export class OrdersService {
       items: items.map((item) => ({
         id: item.id,
         productId: item.productId,
-        name: item.productName,
+        name: item.name,
         quantity: item.quantity,
         unitPrice: Number(item.unitPrice) / 100,
       })),

@@ -3,10 +3,9 @@ import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 const ORDER_STATUSES = [
-  'PENDING_PAYMENT',
-  'PAID',
+  'PENDING',
+  'ACCEPTED',
   'PROCESSING',
-  'SHIPPED',
   'DELIVERED',
   'CANCELLED',
   'REFUNDED',
