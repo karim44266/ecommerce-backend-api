@@ -396,7 +396,7 @@ export class ShipmentsService {
     return rows.map((r) => ({
       id: r.id,
       status: r.status,
-      totalAmount: r.totalAmount / 100,
+      totalAmount: Number(r.totalAmount) / 100,
       customerEmail: r.customerEmail,
       createdAt: r.createdAt,
     }));

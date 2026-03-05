@@ -275,7 +275,26 @@ export const payments = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
+  },
+  (table) => ({
+    orderIdx: index('order_items_order_idx').on(table.orderId),
+    productIdx: index('order_items_product_idx').on(table.productId),
+  }),
+);
+
+export const orderStatusHistory = pgTable(
+  'order_status_history',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    status: text('status').notNull(),
+    note: text('note'),
+    changedBy: uuid('changed_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
