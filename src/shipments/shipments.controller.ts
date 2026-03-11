@@ -58,9 +58,16 @@ export class ShipmentsController {
     @Req() req: { user: JwtUser },
     @Query('status') status?: string,
     @Query('staffId') staffId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const isAdmin = req.user.roles.includes('ADMIN');
-    return this.shipmentsService.findAll(req.user.userId, isAdmin, { status, staffId });
+    return this.shipmentsService.findAll(req.user.userId, isAdmin, {
+      status,
+      staffId,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
   }
 
   // ─── Get Assignable Orders (ADMIN) ─────────────────────────

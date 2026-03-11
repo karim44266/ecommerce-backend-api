@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -22,9 +23,17 @@ export class UsersController {
 
   @Get()
   @ApiOperation({ summary: 'List all users (admin only)' })
-  @ApiOkResponse({ description: 'Sanitized user list' })
-  findAll() {
-    return this.usersService.findAll();
+  @ApiOkResponse({ description: 'Paginated user list' })
+  findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.usersService.findAll({
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      search: search || undefined,
+    });
   }
 
   @Get(':id')
