@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { DATABASE_CONNECTION } from '../database/database.constants';
 import * as schema from '../database/schema';
@@ -107,7 +107,7 @@ export class OrdersService {
             productId: item.productId,
             name: item.productName,
             quantity: item.quantity,
-            unitPrice: String(item.unitPriceCents),
+            unitPrice: item.unitPriceCents,
           })),
         )
         .returning();
@@ -141,6 +141,15 @@ export class OrdersService {
     }
     if (query.status) {
       conditions.push(eq(schema.orders.status, query.status));
+    }
+    if (query.from) {
+      conditions.push(gte(schema.orders.createdAt, new Date(query.from)) as any);
+    }
+    if (query.to) {
+      // Include the entire "to" day by setting time to end-of-day
+      const toDate = new Date(query.to);
+      toDate.setHours(23, 59, 59, 999);
+      conditions.push(lte(schema.orders.createdAt, toDate) as any);
     }
 
     const whereClause =

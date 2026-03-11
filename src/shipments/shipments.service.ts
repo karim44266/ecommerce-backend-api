@@ -33,6 +33,7 @@ export class ShipmentsService {
     staffName?: string | null,
     orderStatus?: string | null,
     customerEmail?: string | null,
+    shippingAddress?: unknown,
   ) {
     return {
       id: shipment.id,
@@ -42,6 +43,7 @@ export class ShipmentsService {
       staffName: staffName ?? undefined,
       orderStatus: orderStatus ?? undefined,
       customerEmail: customerEmail ?? undefined,
+      shippingAddress: shippingAddress ?? undefined,
       status: shipment.status,
       trackingNumber: shipment.trackingNumber,
       assignedAt: shipment.assignedAt,
@@ -137,9 +139,12 @@ export class ShipmentsService {
   async findAll(
     userId: string,
     isAdmin: boolean,
-    query?: { status?: string; staffId?: string },
+    query?: { status?: string; staffId?: string; page?: number; limit?: number },
   ) {
     const staffAlias = schema.users;
+    const page = query?.page ?? 1;
+    const limit = query?.limit ?? 20;
+    const offset = (page - 1) * limit;
 
     const conditions: SQL[] = [];
 
@@ -158,22 +163,37 @@ export class ShipmentsService {
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
+    // Count
+    const [countResult] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.shipments)
+      .leftJoin(staffAlias, eq(schema.shipments.staffUserId, staffAlias.id))
+      .leftJoin(schema.orders, eq(schema.shipments.orderId, schema.orders.id))
+      .where(whereClause);
+    const total = countResult?.count ?? 0;
+
     const rows = await this.db
       .select({
         shipment: schema.shipments,
         staffEmail: staffAlias.email,
         staffName: staffAlias.name,
         orderStatus: schema.orders.status,
+        shippingAddress: schema.orders.shippingAddress,
       })
       .from(schema.shipments)
       .leftJoin(staffAlias, eq(schema.shipments.staffUserId, staffAlias.id))
       .leftJoin(schema.orders, eq(schema.shipments.orderId, schema.orders.id))
       .where(whereClause)
-      .orderBy(desc(schema.shipments.createdAt));
+      .orderBy(desc(schema.shipments.createdAt))
+      .limit(limit)
+      .offset(offset);
 
-    return rows.map((r) =>
-      this.formatShipment(r.shipment, r.staffEmail, r.staffName, r.orderStatus),
-    );
+    return {
+      data: rows.map((r) =>
+        this.formatShipment(r.shipment, r.staffEmail, r.staffName, r.orderStatus, null, r.shippingAddress),
+      ),
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -380,6 +400,7 @@ export class ShipmentsService {
         status: schema.orders.status,
         totalAmount: schema.orders.totalAmount,
         customerEmail: schema.users.email,
+        shippingAddress: schema.orders.shippingAddress,
         createdAt: schema.orders.createdAt,
       })
       .from(schema.orders)
@@ -398,6 +419,7 @@ export class ShipmentsService {
       status: r.status,
       totalAmount: Number(r.totalAmount) / 100,
       customerEmail: r.customerEmail,
+      shippingAddress: r.shippingAddress,
       createdAt: r.createdAt,
     }));
   }

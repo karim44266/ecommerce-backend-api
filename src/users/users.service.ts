@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, ilike, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { DATABASE_CONNECTION } from '../database/database.constants';
 import * as schema from '../database/schema';
@@ -22,9 +22,40 @@ export class UsersService {
     return safe;
   }
 
-  async findAll() {
-    const rows = await this.db.select().from(schema.users);
-    return rows.map((row) => this.sanitize(row));
+  async findAll(query?: { page?: number; limit?: number; search?: string }) {
+    const page = query?.page ?? 1;
+    const limit = query?.limit ?? 20;
+    const offset = (page - 1) * limit;
+
+    const conditions: any[] = [];
+    if (query?.search) {
+      conditions.push(
+        or(
+          ilike(schema.users.email, `%${query.search}%`),
+          ilike(schema.users.name, `%${query.search}%`),
+        ),
+      );
+    }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countResult] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.users)
+      .where(whereClause);
+    const total = countResult?.count ?? 0;
+
+    const rows = await this.db
+      .select()
+      .from(schema.users)
+      .where(whereClause)
+      .orderBy(schema.users.createdAt)
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      data: rows.map((row) => this.sanitize(row)),
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async findById(id: string) {
