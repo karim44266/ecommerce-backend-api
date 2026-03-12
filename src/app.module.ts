@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
+import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerModule } from '@nestjs/throttler';
 import path from 'node:path';
 import { AuthModule } from './auth/auth.module';
@@ -21,6 +23,12 @@ import { AppService } from './app.service';
         path.resolve(process.cwd(), '.env'),
         path.resolve(__dirname, '..', '.env'),
       ],
+    }),
+    MongooseModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        uri: configService.get<string>('MONGODB_URI'),
+      }),
     }),
     ThrottlerModule.forRoot([
       {

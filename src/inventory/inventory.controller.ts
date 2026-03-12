@@ -4,7 +4,6 @@ import {
   Get,
   HttpCode,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -81,7 +80,7 @@ export class InventoryController {
   @ApiOperation({ summary: 'Get inventory for a specific product' })
   @ApiOkResponse({ description: 'Inventory record', type: InventoryResponseDto })
   @ApiNotFoundResponse({ description: 'Inventory not found' })
-  findByProduct(@Param('productId', ParseUUIDPipe) productId: string) {
+  findByProduct(@Param('productId') productId: string) {
     return this.inventoryService.findByProductId(productId);
   }
 
@@ -91,7 +90,7 @@ export class InventoryController {
   @ApiOkResponse({ description: 'Paginated adjustment history', type: PaginatedHistoryResponseDto })
   @ApiNotFoundResponse({ description: 'Inventory not found' })
   getHistory(
-    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('productId') productId: string,
     @Query() query: HistoryQueryDto,
   ) {
     return this.inventoryService.getAdjustmentHistory(productId, query);
@@ -104,7 +103,7 @@ export class InventoryController {
   @ApiBadRequestResponse({ description: 'Stock cannot go below 0' })
   @ApiNotFoundResponse({ description: 'Inventory not found' })
   adjust(
-    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('productId') productId: string,
     @Body() dto: AdjustStockDto,
     @Req() req: { user?: { userId?: string } },
   ) {
@@ -122,7 +121,7 @@ export class InventoryController {
   @ApiOkResponse({ description: 'Updated inventory record', type: InventoryResponseDto })
   @ApiNotFoundResponse({ description: 'Inventory not found' })
   updateThreshold(
-    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('productId') productId: string,
     @Body() dto: UpdateThresholdDto,
   ) {
     return this.inventoryService.updateThreshold(

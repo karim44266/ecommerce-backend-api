@@ -3,7 +3,6 @@ import {
   Controller,
   Get,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -66,7 +65,7 @@ export class OrdersController {
   @ApiOkResponse({ description: 'Order detail' })
   @ApiNotFoundResponse({ description: 'Order not found' })
   @ApiForbiddenResponse({ description: 'Access denied' })
-  findOne(@Req() req: { user: JwtUser }, @Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Req() req: { user: JwtUser }, @Param('id') id: string) {
     const isAdmin = req.user.roles.includes('ADMIN');
     return this.ordersService.findById(id, req.user.userId, isAdmin);
   }
@@ -82,7 +81,7 @@ export class OrdersController {
   @ApiNotFoundResponse({ description: 'Order not found' })
   updateStatus(
     @Req() req: { user: JwtUser },
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body() dto: UpdateOrderStatusDto,
   ) {
     return this.ordersService.updateStatus(id, dto, req.user.userId);
@@ -98,7 +97,7 @@ export class OrdersController {
   @ApiNotFoundResponse({ description: 'Order not found' })
   updateTracking(
     @Req() req: { user: JwtUser },
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body() dto: UpdateTrackingDto,
   ) {
     return this.ordersService.updateTracking(id, dto, req.user.userId);
@@ -113,7 +112,7 @@ export class OrdersController {
   @ApiForbiddenResponse({ description: 'Not your order' })
   getStatusHistory(
     @Req() req: { user: JwtUser },
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
   ) {
     return this.ordersService.getStatusHistory(
       id,

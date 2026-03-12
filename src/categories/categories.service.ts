@@ -1,28 +1,40 @@
 import {
   ConflictException,
-  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, eq, ilike, sql, SQL } from 'drizzle-orm';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { DATABASE_CONNECTION } from '../database/database.constants';
-import * as schema from '../database/schema';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { CategoryQueryDto } from './dto/category-query.dto';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-
-/** Escape special LIKE characters so user input is treated literally. */
-function escapeLike(value: string): string {
-  return value.replace(/[%_\\]/g, '\\$&');
-}
+import { Category, CategoryDocument } from './schemas/category.schema';
 
 @Injectable()
 export class CategoriesService {
   constructor(
-    @Inject(DATABASE_CONNECTION)
-    private readonly db: NodePgDatabase<typeof schema>,
+    @InjectModel(Category.name)
+    private readonly categoryModel: Model<CategoryDocument>,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<ProductDocument>,
   ) {}
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private async toResponse(category: CategoryDocument | Record<string, unknown>) {
+    const plain = typeof (category as CategoryDocument).toJSON === 'function'
+      ? ((category as CategoryDocument).toJSON() as Record<string, unknown>)
+      : category;
+    const productCount = await this.productModel.countDocuments({ categoryId: plain.id });
+
+    return {
+      ...plain,
+      productCount,
+    };
+  }
 
   private slugify(name: string): string {
     return name
@@ -38,39 +50,19 @@ export class CategoriesService {
     const limit = query.limit ?? 20;
     const offset = (page - 1) * limit;
 
-    const conditions: SQL[] = [];
-    if (query.search) {
-      conditions.push(ilike(schema.categories.name, `%${escapeLike(query.search)}%`));
-    }
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const filter = query.search
+      ? { name: { $regex: this.escapeRegex(query.search), $options: 'i' } }
+      : {};
 
-    // Total count
-    const [{ count: total }] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(schema.categories)
-      .where(whereClause);
+    const [total, rows] = await Promise.all([
+      this.categoryModel.countDocuments(filter),
+      this.categoryModel.find(filter).sort({ name: 1 }).skip(offset).limit(limit),
+    ]);
 
-    // Categories with product count via subquery
-    const rows = await this.db
-      .select({
-        id: schema.categories.id,
-        name: schema.categories.name,
-        slug: schema.categories.slug,
-        description: schema.categories.description,
-        createdAt: schema.categories.createdAt,
-        productCount: sql<number>`(
-          SELECT count(*)::int FROM ${schema.products}
-          WHERE ${schema.products.categoryId} = ${schema.categories.id}
-        )`,
-      })
-      .from(schema.categories)
-      .where(whereClause)
-      .orderBy(schema.categories.name)
-      .limit(limit)
-      .offset(offset);
+    const data = await Promise.all(rows.map((row) => this.toResponse(row)));
 
     return {
-      data: rows,
+      data,
       meta: {
         total,
         page,
@@ -82,57 +74,31 @@ export class CategoriesService {
 
   /** Get all categories (lightweight, for dropdowns). */
   async findAllSimple() {
-    return this.db
-      .select({
-        id: schema.categories.id,
-        name: schema.categories.name,
-        slug: schema.categories.slug,
-      })
-      .from(schema.categories)
-      .orderBy(schema.categories.name);
+    const rows = await this.categoryModel.find().select('name slug').sort({ name: 1 });
+    return rows.map((row) => row.toJSON());
   }
 
   async findById(id: string) {
-    const rows = await this.db
-      .select({
-        id: schema.categories.id,
-        name: schema.categories.name,
-        slug: schema.categories.slug,
-        description: schema.categories.description,
-        createdAt: schema.categories.createdAt,
-        productCount: sql<number>`(
-          SELECT count(*)::int FROM ${schema.products}
-          WHERE ${schema.products.categoryId} = ${schema.categories.id}
-        )`,
-      })
-      .from(schema.categories)
-      .where(eq(schema.categories.id, id))
-      .limit(1);
-
-    if (rows.length === 0) {
+    const category = await this.categoryModel.findById(id);
+    if (!category) {
       throw new NotFoundException('Category not found');
     }
-    return rows[0];
+
+    return this.toResponse(category);
   }
 
   async create(dto: CreateCategoryDto) {
     const slug = dto.slug ?? this.slugify(dto.name);
 
     try {
-      const [created] = await this.db
-        .insert(schema.categories)
-        .values({
+      const created = await this.categoryModel.create({
           name: dto.name,
           slug,
           description: dto.description ?? null,
-        })
-        .returning();
+        });
       return this.findById(created.id);
     } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        error.message.includes('duplicate key')
-      ) {
+      if ((error as { code?: number })?.code === 11000) {
         throw new ConflictException('Category with this name or slug already exists');
       }
       throw error;
@@ -157,16 +123,10 @@ export class CategoriesService {
     }
 
     try {
-      await this.db
-        .update(schema.categories)
-        .set(values)
-        .where(eq(schema.categories.id, id));
+      await this.categoryModel.findByIdAndUpdate(id, { $set: values }, { new: true });
       return this.findById(id);
     } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        error.message.includes('duplicate key')
-      ) {
+      if ((error as { code?: number })?.code === 11000) {
         throw new ConflictException('Category with this name or slug already exists');
       }
       throw error;
@@ -177,16 +137,14 @@ export class CategoriesService {
     await this.findById(id);
 
     // Check for products using this category
-    const product = await this.db.query.products.findFirst({
-      where: eq(schema.products.categoryId, id),
-    });
+    const product = await this.productModel.findOne({ categoryId: id });
     if (product) {
       throw new ConflictException(
         'Cannot delete category with existing products. Remove or reassign products first.',
       );
     }
 
-    await this.db.delete(schema.categories).where(eq(schema.categories.id, id));
+    await this.categoryModel.findByIdAndDelete(id);
     return { deleted: true };
   }
 }

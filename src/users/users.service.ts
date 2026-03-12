@@ -1,25 +1,32 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, ilike, or, sql } from 'drizzle-orm';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { DATABASE_CONNECTION } from '../database/database.constants';
-import * as schema from '../database/schema';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { User, UserDocument } from './schemas/user.schema';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @Inject(DATABASE_CONNECTION)
-    private readonly db: NodePgDatabase<typeof schema>,
-  ) {}
+  constructor(@InjectModel(User.name) private readonly userModel: Model<UserDocument>) {}
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private getPrimaryRole(roles: string[] = []): string {
+    return (roles.find((role) => role !== 'CUSTOMER') ?? roles[0] ?? 'CUSTOMER').toLowerCase();
+  }
 
   /** Strip sensitive fields before returning to client. */
-  private sanitize(
-    user: typeof schema.users.$inferSelect,
-  ): Omit<
-    typeof schema.users.$inferSelect,
-    'passwordHash' | 'mfaOtpHash' | 'mfaOtpExpiresAt'
-  > {
-    const { passwordHash: _pw, mfaOtpHash: _otp, mfaOtpExpiresAt: _exp, ...safe } = user;
-    return safe;
+  private sanitize(user: UserDocument | (Record<string, unknown> & { roles?: string[] })) {
+    const plain = typeof (user as UserDocument).toJSON === 'function'
+      ? ((user as UserDocument).toJSON() as Record<string, unknown> & { roles?: string[] })
+      : user;
+
+    const { passwordHash: _pw, mfaOtpHash: _otp, mfaOtpExpiresAt: _exp, ...safe } = plain;
+
+    return {
+      ...safe,
+      role: this.getPrimaryRole((safe.roles as string[] | undefined) ?? []),
+    };
   }
 
   async findAll(query?: { page?: number; limit?: number; search?: string }) {
@@ -27,30 +34,19 @@ export class UsersService {
     const limit = query?.limit ?? 20;
     const offset = (page - 1) * limit;
 
-    const conditions: any[] = [];
-    if (query?.search) {
-      conditions.push(
-        or(
-          ilike(schema.users.email, `%${query.search}%`),
-          ilike(schema.users.name, `%${query.search}%`),
-        ),
-      );
-    }
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const filter = query?.search
+      ? {
+          $or: [
+            { email: { $regex: this.escapeRegex(query.search), $options: 'i' } },
+            { name: { $regex: this.escapeRegex(query.search), $options: 'i' } },
+          ],
+        }
+      : {};
 
-    const [countResult] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(schema.users)
-      .where(whereClause);
-    const total = countResult?.count ?? 0;
-
-    const rows = await this.db
-      .select()
-      .from(schema.users)
-      .where(whereClause)
-      .orderBy(schema.users.createdAt)
-      .limit(limit)
-      .offset(offset);
+    const [total, rows] = await Promise.all([
+      this.userModel.countDocuments(filter),
+      this.userModel.find(filter).sort({ createdAt: 1 }).skip(offset).limit(limit),
+    ]);
 
     return {
       data: rows.map((row) => this.sanitize(row)),
@@ -59,9 +55,7 @@ export class UsersService {
   }
 
   async findById(id: string) {
-    const user = await this.db.query.users.findFirst({
-      where: eq(schema.users.id, id),
-    });
+    const user = await this.userModel.findById(id);
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -69,50 +63,22 @@ export class UsersService {
   }
 
   async updateRole(id: string, role: string) {
-    const [updated] = await this.db
-      .update(schema.users)
-      .set({ role, updatedAt: new Date() })
-      .where(eq(schema.users.id, id))
-      .returning();
+    const normalizedRole = role.toUpperCase();
+    const roles = Array.from(new Set([normalizedRole, 'CUSTOMER']));
+    const updated = await this.userModel.findByIdAndUpdate(
+      id,
+      { roles },
+      { new: true },
+    );
     if (!updated) {
       throw new NotFoundException('User not found');
-    }
-
-    // Sync the user_roles junction table so the JWT includes the correct role
-    const roleName = role.toUpperCase();
-    const roleRow = await this.db.query.roles.findFirst({
-      where: eq(schema.roles.name, roleName),
-    });
-    if (roleRow) {
-      // Remove all existing roles for this user
-      await this.db
-        .delete(schema.userRoles)
-        .where(eq(schema.userRoles.userId, id));
-      // Assign the new role + CUSTOMER as a base role
-      const rolesToAssign = [roleRow.id];
-      if (roleName !== 'CUSTOMER') {
-        const customerRole = await this.db.query.roles.findFirst({
-          where: eq(schema.roles.name, 'CUSTOMER'),
-        });
-        if (customerRole) {
-          rolesToAssign.push(customerRole.id);
-        }
-      }
-      await this.db
-        .insert(schema.userRoles)
-        .values(rolesToAssign.map((roleId) => ({ userId: id, roleId })))
-        .onConflictDoNothing();
     }
 
     return this.sanitize(updated);
   }
 
   async updateStatus(id: string, status: string) {
-    const [updated] = await this.db
-      .update(schema.users)
-      .set({ status, updatedAt: new Date() })
-      .where(eq(schema.users.id, id))
-      .returning();
+    const updated = await this.userModel.findByIdAndUpdate(id, { status }, { new: true });
     if (!updated) {
       throw new NotFoundException('User not found');
     }

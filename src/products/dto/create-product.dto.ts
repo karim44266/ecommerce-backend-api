@@ -1,11 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsInt,
+  IsMongoId,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -52,8 +52,8 @@ export class CreateProductDto {
   @IsOptional()
   status?: string;
 
-  @ApiPropertyOptional({ example: 'uuid-of-category' })
-  @IsUUID()
+  @ApiPropertyOptional({ example: '67d07f0d34f2e8d7fc123456' })
+  @IsMongoId()
   @IsOptional()
   categoryId?: string;
 }

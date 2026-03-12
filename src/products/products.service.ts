@@ -1,97 +1,92 @@
 import {
   ConflictException,
-  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, ilike, sql, SQL } from 'drizzle-orm';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { DATABASE_CONNECTION } from '../database/database.constants';
-import * as schema from '../database/schema';
+import { InjectModel } from '@nestjs/mongoose';
+import { FilterQuery, Model } from 'mongoose';
+import { Category, CategoryDocument } from '../categories/schemas/category.schema';
 import { InventoryService } from '../inventory/inventory.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-
-/** Escape special LIKE characters so user input is treated literally. */
-function escapeLike(value: string): string {
-  return value.replace(/[%_\\]/g, '\\$&');
-}
+import { Product, ProductDocument } from './schemas/product.schema';
 
 @Injectable()
 export class ProductsService {
   constructor(
-    @Inject(DATABASE_CONNECTION)
-    private readonly db: NodePgDatabase<typeof schema>,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<ProductDocument>,
+    @InjectModel(Category.name)
+    private readonly categoryModel: Model<CategoryDocument>,
     private readonly inventoryService: InventoryService,
   ) {}
 
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
   /** Map a raw DB row + category name to the API response shape. */
-  private toResponse(
-    row: typeof schema.products.$inferSelect,
-    categoryName?: string | null,
-  ) {
+  private toResponse(product: ProductDocument | Record<string, unknown>) {
+    const plain = typeof (product as ProductDocument).toJSON === 'function'
+      ? ((product as ProductDocument).toJSON() as Record<string, unknown> & { categoryId?: unknown })
+      : (product as Record<string, unknown> & { categoryId?: unknown });
+    const category =
+      plain.categoryId && typeof plain.categoryId === 'object' && 'name' in (plain.categoryId as object)
+        ? (plain.categoryId as Record<string, unknown>)
+        : null;
+
     return {
-      id: row.id,
-      name: row.name,
-      sku: row.sku,
-      description: row.description,
-      price: Number(row.price),
-      image: row.image,
-      inventory: row.inventory,
-      stock: row.inventory, // alias for storefront compatibility
-      status: row.status,
-      category: categoryName ?? null,
-      categoryId: row.categoryId,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
+      id: plain.id,
+      name: plain.name,
+      sku: plain.sku,
+      description: plain.description,
+      price: Number(plain.price),
+      image: plain.image,
+      inventory: plain.inventory,
+      stock: plain.inventory,
+      status: plain.status,
+      category: category?.name ?? null,
+      categoryId: category?.id ?? (plain.categoryId ? String(plain.categoryId) : null),
+      createdAt: plain.createdAt,
+      updatedAt: plain.updatedAt,
     };
   }
 
   /** Build WHERE conditions from query parameters. */
-  private async buildConditions(query: ProductQueryDto): Promise<SQL[]> {
-    const conditions: SQL[] = [];
+  private async buildFilter(query: ProductQueryDto): Promise<FilterQuery<ProductDocument>> {
+    const conditions: FilterQuery<ProductDocument>[] = [];
 
     if (query.search) {
-      conditions.push(ilike(schema.products.name, `%${escapeLike(query.search)}%`));
+      conditions.push({ name: { $regex: this.escapeRegex(query.search), $options: 'i' } });
     }
 
     if (query.status) {
-      conditions.push(eq(schema.products.status, query.status));
+      conditions.push({ status: query.status });
     }
 
-    // Category filter — by ID directly or by name
     if (query.categoryId) {
-      conditions.push(eq(schema.products.categoryId, query.categoryId));
+      conditions.push({ categoryId: query.categoryId });
     } else if (query.category) {
-      const cat = await this.db.query.categories.findFirst({
-        where: ilike(schema.categories.name, query.category),
+      const cat = await this.categoryModel.findOne({
+        name: { $regex: `^${this.escapeRegex(query.category)}$`, $options: 'i' },
       });
       if (cat) {
-        conditions.push(eq(schema.products.categoryId, cat.id));
+        conditions.push({ categoryId: cat.id });
       } else {
-        // No matching category — return impossible condition to get 0 results
-        conditions.push(sql`false`);
+        conditions.push({ _id: { $exists: false } } as FilterQuery<ProductDocument>);
       }
     }
 
-    return conditions;
-  }
-
-  /** Build ORDER BY from query. */
-  private buildOrderBy(query: ProductQueryDto) {
-    const dir = query.sortOrder === 'desc' ? desc : asc;
-    switch (query.sortBy) {
-      case 'name':
-        return dir(schema.products.name);
-      case 'price':
-        return dir(schema.products.price);
-      case 'updatedAt':
-        return dir(schema.products.updatedAt);
-      case 'createdAt':
-      default:
-        return dir(schema.products.createdAt);
+    if (conditions.length === 0) {
+      return {};
     }
+
+    if (conditions.length === 1) {
+      return conditions[0];
+    }
+
+    return { $and: conditions };
   }
 
   async findAll(query: ProductQueryDto) {
@@ -99,50 +94,31 @@ export class ProductsService {
     const limit = query.limit ?? 20;
     const offset = (page - 1) * limit;
 
-    const conditions = await this.buildConditions(query);
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const filter = await this.buildFilter(query);
 
-    // Sorting
-    const sortColumnMap: Record<string, any> = {
-      name: schema.products.name,
-      price: schema.products.price,
-      inventory: schema.products.inventory,
-      createdAt: schema.products.createdAt,
-      updatedAt: schema.products.updatedAt,
-      status: schema.products.status,
+    const sortColumnMap: Record<string, string> = {
+      name: 'name',
+      price: 'price',
+      inventory: 'inventory',
+      createdAt: 'createdAt',
+      updatedAt: 'updatedAt',
+      status: 'status',
     };
-    const sortCol = sortColumnMap[query.sortBy ?? 'createdAt'] ?? schema.products.createdAt;
-    const orderFn = query.sortOrder === 'asc' ? asc : desc;
+    const sortCol = sortColumnMap[query.sortBy ?? 'createdAt'] ?? 'createdAt';
+    const sortDir = query.sortOrder === 'asc' ? 1 : -1;
 
-    // Count total matching rows
-    const [countResult] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(schema.products)
-      .leftJoin(
-        schema.categories,
-        eq(schema.products.categoryId, schema.categories.id),
-      )
-      .where(whereClause);
-
-    const total = countResult?.count ?? 0;
-
-    const rows = await this.db
-      .select({
-        product: schema.products,
-        categoryName: schema.categories.name,
-      })
-      .from(schema.products)
-      .leftJoin(
-        schema.categories,
-        eq(schema.products.categoryId, schema.categories.id),
-      )
-      .where(whereClause)
-      .orderBy(orderFn(sortCol))
-      .limit(limit)
-      .offset(offset);
+    const [total, rows] = await Promise.all([
+      this.productModel.countDocuments(filter),
+      this.productModel
+        .find(filter)
+        .populate('categoryId', 'name')
+        .sort({ [sortCol]: sortDir })
+        .skip(offset)
+        .limit(limit),
+    ]);
 
     return {
-      data: rows.map((r) => this.toResponse(r.product, r.categoryName)),
+      data: rows.map((row) => this.toResponse(row)),
       meta: {
         total,
         page,
@@ -153,55 +129,41 @@ export class ProductsService {
   }
 
   async findById(id: string) {
-    const rows = await this.db
-      .select({
-        product: schema.products,
-        categoryName: schema.categories.name,
-      })
-      .from(schema.products)
-      .leftJoin(
-        schema.categories,
-        eq(schema.products.categoryId, schema.categories.id),
-      )
-      .where(eq(schema.products.id, id))
-      .limit(1);
+    const product = await this.productModel.findById(id).populate('categoryId', 'name');
 
-    if (rows.length === 0) {
+    if (!product) {
       throw new NotFoundException('Product not found');
     }
 
-    return this.toResponse(rows[0].product, rows[0].categoryName);
+    return this.toResponse(product);
   }
 
   async create(dto: CreateProductDto) {
     try {
-      const [created] = await this.db
-        .insert(schema.products)
-        .values({
+      const created = await this.productModel.create({
           name: dto.name,
           sku: dto.sku,
           description: dto.description ?? '',
-          price: dto.price.toFixed(2),
+          price: dto.price,
           image: dto.image ?? '',
           inventory: dto.inventory ?? 0,
           status: dto.status ?? 'active',
           categoryId: dto.categoryId ?? null,
-        })
-        .returning();
+          inventoryInfo: {
+            quantity: dto.inventory ?? 0,
+            lowStockThreshold: 10,
+            lastAdjustedAt: null,
+          },
+        });
 
-      // Auto-create inventory record for the new product
       await this.inventoryService.ensureInventory(
         created.id,
         dto.inventory ?? 0,
       );
 
-      // Fetch with category name
       return this.findById(created.id);
     } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        error.message.includes('duplicate key')
-      ) {
+      if ((error as { code?: number })?.code === 11000) {
         throw new ConflictException('Product with this SKU already exists');
       }
       throw error;
@@ -209,29 +171,25 @@ export class ProductsService {
   }
 
   async update(id: string, dto: UpdateProductDto) {
-    // Ensure it exists
     await this.findById(id);
 
-    const values: Record<string, unknown> = { updatedAt: new Date() };
+    const values: Record<string, unknown> = {};
     if (dto.name !== undefined) values.name = dto.name;
     if (dto.sku !== undefined) values.sku = dto.sku;
     if (dto.description !== undefined) values.description = dto.description;
-    if (dto.price !== undefined) values.price = dto.price.toFixed(2);
+    if (dto.price !== undefined) values.price = dto.price;
     if (dto.image !== undefined) values.image = dto.image;
-    if (dto.inventory !== undefined) values.inventory = dto.inventory;
+    if (dto.inventory !== undefined) {
+      values.inventory = dto.inventory;
+      values['inventoryInfo.quantity'] = dto.inventory;
+    }
     if (dto.status !== undefined) values.status = dto.status;
     if (dto.categoryId !== undefined) values.categoryId = dto.categoryId;
 
     try {
-      await this.db
-        .update(schema.products)
-        .set(values)
-        .where(eq(schema.products.id, id));
+      await this.productModel.findByIdAndUpdate(id, { $set: values }, { new: true });
     } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        error.message.includes('duplicate key')
-      ) {
+      if ((error as { code?: number })?.code === 11000) {
         throw new ConflictException('Product with this SKU already exists');
       }
       throw error;
@@ -242,7 +200,7 @@ export class ProductsService {
 
   async remove(id: string) {
     await this.findById(id);
-    await this.db.delete(schema.products).where(eq(schema.products.id, id));
+    await this.productModel.findByIdAndDelete(id);
     return { deleted: true };
   }
 }

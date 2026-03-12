@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, IsIn, IsUUID, Min, Max } from 'class-validator';
+import { IsOptional, IsString, IsInt, IsIn, IsMongoId, Min, Max } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
 export class ProductQueryDto {
@@ -15,7 +15,7 @@ export class ProductQueryDto {
   category?: string;
 
   @ApiPropertyOptional({ description: 'Filter by category ID' })
-  @IsUUID()
+  @IsMongoId()
   @IsOptional()
   categoryId?: string;
 
