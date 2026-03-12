@@ -3,7 +3,6 @@ import {
   Controller,
   Get,
   Param,
-  ParseUUIDPipe,
   Patch,
   Query,
   UseGuards,
@@ -40,7 +39,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Get user by ID (admin only)' })
   @ApiOkResponse({ description: 'User detail' })
   @ApiNotFoundResponse({ description: 'User not found' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Param('id') id: string) {
     return this.usersService.findById(id);
   }
 
@@ -49,7 +48,7 @@ export class UsersController {
   @ApiOkResponse({ description: 'Updated user' })
   @ApiNotFoundResponse({ description: 'User not found' })
   updateRole(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body() dto: UpdateRoleDto,
   ) {
     return this.usersService.updateRole(id, dto.role);
@@ -60,7 +59,7 @@ export class UsersController {
   @ApiOkResponse({ description: 'Updated user' })
   @ApiNotFoundResponse({ description: 'User not found' })
   updateStatus(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body() dto: UpdateStatusDto,
   ) {
     return this.usersService.updateStatus(id, dto.status);

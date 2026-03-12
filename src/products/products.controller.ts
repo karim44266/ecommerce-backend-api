@@ -4,7 +4,6 @@ import {
   Delete,
   Get,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -44,7 +43,7 @@ export class ProductsController {
   @ApiOperation({ summary: 'Get product by ID (public)' })
   @ApiOkResponse({ description: 'Product detail', type: ProductResponseDto })
   @ApiNotFoundResponse({ description: 'Product not found' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Param('id') id: string) {
     return this.productsService.findById(id);
   }
 
@@ -68,7 +67,7 @@ export class ProductsController {
   @ApiNotFoundResponse({ description: 'Product not found' })
   @ApiConflictResponse({ description: 'Duplicate SKU' })
   update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body() dto: UpdateProductDto,
   ) {
     return this.productsService.update(id, dto);
@@ -81,7 +80,7 @@ export class ProductsController {
   @ApiOperation({ summary: 'Delete a product (admin only)' })
   @ApiOkResponse({ description: 'Deleted' })
   @ApiNotFoundResponse({ description: 'Product not found' })
-  remove(@Param('id', ParseUUIDPipe) id: string) {
+  remove(@Param('id') id: string) {
     return this.productsService.remove(id);
   }
 }

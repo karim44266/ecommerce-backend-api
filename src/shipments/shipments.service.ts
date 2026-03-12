@@ -1,26 +1,32 @@
 import {
   BadRequestException,
   ForbiddenException,
-  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, sql, SQL } from 'drizzle-orm';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { DATABASE_CONNECTION } from '../database/database.constants';
-import * as schema from '../database/schema';
+import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { Connection, Model, Types } from 'mongoose';
+import { Order, OrderDocument } from '../orders/schemas/order.schema';
+import { User, UserDocument } from '../users/schemas/user.schema';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
 import { AssignShipmentDto } from './dto/assign-shipment.dto';
 import {
   UpdateShipmentStatusDto,
   SHIPMENT_STATUS_TRANSITIONS,
 } from './dto/update-shipment-status.dto';
+import { Shipment, ShipmentDocument } from './schemas/shipment.schema';
 
 @Injectable()
 export class ShipmentsService {
   constructor(
-    @Inject(DATABASE_CONNECTION)
-    private readonly db: NodePgDatabase<typeof schema>,
+    @InjectModel(Shipment.name)
+    private readonly shipmentModel: Model<ShipmentDocument>,
+    @InjectModel(Order.name)
+    private readonly orderModel: Model<OrderDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
+    @InjectConnection()
+    private readonly connection: Connection,
   ) {}
 
   // ──────────────────────────────────────────────────────────────
@@ -28,28 +34,30 @@ export class ShipmentsService {
   // ──────────────────────────────────────────────────────────────
 
   private formatShipment(
-    shipment: typeof schema.shipments.$inferSelect,
-    staffEmail?: string | null,
-    staffName?: string | null,
-    orderStatus?: string | null,
-    customerEmail?: string | null,
-    shippingAddress?: unknown,
+    shipment: ShipmentDocument | Record<string, unknown>,
   ) {
+    const plain = typeof (shipment as ShipmentDocument).toJSON === 'function'
+      ? ((shipment as ShipmentDocument).toJSON() as Record<string, any>)
+      : (shipment as Record<string, any>);
+    const staff = plain.staffUserId && typeof plain.staffUserId === 'object' ? plain.staffUserId : null;
+    const order = plain.orderId && typeof plain.orderId === 'object' ? plain.orderId : null;
+    const customer = order?.userId && typeof order.userId === 'object' ? order.userId : null;
+
     return {
-      id: shipment.id,
-      orderId: shipment.orderId,
-      staffUserId: shipment.staffUserId,
-      staffEmail: staffEmail ?? undefined,
-      staffName: staffName ?? undefined,
-      orderStatus: orderStatus ?? undefined,
-      customerEmail: customerEmail ?? undefined,
-      shippingAddress: shippingAddress ?? undefined,
-      status: shipment.status,
-      trackingNumber: shipment.trackingNumber,
-      assignedAt: shipment.assignedAt,
-      deliveredAt: shipment.deliveredAt,
-      createdAt: shipment.createdAt,
-      updatedAt: shipment.updatedAt,
+      id: plain.id,
+      orderId: order?.id ?? String(plain.orderId),
+      staffUserId: staff?.id ?? String(plain.staffUserId),
+      staffEmail: staff?.email ?? undefined,
+      staffName: staff?.name ?? undefined,
+      orderStatus: order?.status ?? undefined,
+      customerEmail: customer?.email ?? undefined,
+      shippingAddress: order?.shippingAddress ?? undefined,
+      status: plain.status,
+      trackingNumber: plain.trackingNumber,
+      assignedAt: plain.assignedAt,
+      deliveredAt: plain.deliveredAt,
+      createdAt: plain.createdAt,
+      updatedAt: plain.updatedAt,
     };
   }
 
@@ -58,12 +66,7 @@ export class ShipmentsService {
   // ──────────────────────────────────────────────────────────────
 
   async create(dto: CreateShipmentDto) {
-    // 1) Validate order exists and has ACCEPTED or PROCESSING status
-    const [order] = await this.db
-      .select()
-      .from(schema.orders)
-      .where(eq(schema.orders.id, dto.orderId))
-      .limit(1);
+    const order = await this.orderModel.findById(dto.orderId);
 
     if (!order) {
       throw new NotFoundException('Order not found');
@@ -75,61 +78,77 @@ export class ShipmentsService {
       );
     }
 
-    // 2) Check no existing shipment for this order
-    const [existing] = await this.db
-      .select({ id: schema.shipments.id })
-      .from(schema.shipments)
-      .where(eq(schema.shipments.orderId, dto.orderId))
-      .limit(1);
+    const existing = await this.shipmentModel.findOne({ orderId: dto.orderId }).select('_id');
 
     if (existing) {
       throw new BadRequestException('A shipment already exists for this order');
     }
 
-    // 3) Validate staff user exists and has STAFF role
-    const [staffUser] = await this.db
-      .select({ id: schema.users.id, role: schema.users.role })
-      .from(schema.users)
-      .where(eq(schema.users.id, dto.staffUserId))
-      .limit(1);
+    const staffUser = await this.userModel.findById(dto.staffUserId).select('roles');
 
     if (!staffUser) {
       throw new NotFoundException('Staff user not found');
     }
 
-    if (staffUser.role !== 'staff') {
+    if (!(staffUser.roles ?? []).includes('STAFF')) {
       throw new BadRequestException('Assigned user must have the STAFF role');
     }
 
-    // 4) Transactionally create shipment + transition order to PROCESSING
-    return this.db.transaction(async (tx) => {
-      const [shipment] = await tx
-        .insert(schema.shipments)
-        .values({
-          orderId: dto.orderId,
-          staffUserId: dto.staffUserId,
-          status: 'ASSIGNED',
-          trackingNumber: dto.trackingNumber ?? null,
-        })
-        .returning();
+    const session = await this.connection.startSession();
 
-      // Transition order to PROCESSING if it's still ACCEPTED
-      if (order.status === 'ACCEPTED') {
-        await tx
-          .update(schema.orders)
-          .set({ status: 'PROCESSING', updatedAt: new Date() })
-          .where(eq(schema.orders.id, dto.orderId));
+    try {
+      let createdShipmentId: string | null = null;
 
-        await tx.insert(schema.orderStatusHistory).values({
-          orderId: dto.orderId,
-          status: 'PROCESSING',
-          note: 'Shipment created – order moved to PROCESSING',
-          changedBy: null,
-        });
+      await session.withTransaction(async () => {
+        const [shipment] = await this.shipmentModel.create(
+          [
+            {
+              orderId: dto.orderId,
+              staffUserId: dto.staffUserId,
+              status: 'ASSIGNED',
+              trackingNumber: dto.trackingNumber ?? null,
+            },
+          ],
+          { session },
+        );
+        createdShipmentId = shipment.id;
+
+        if (order.status === 'ACCEPTED') {
+          await this.orderModel.findByIdAndUpdate(
+            dto.orderId,
+            {
+              $set: { status: 'PROCESSING' },
+              $push: {
+                statusHistory: {
+                  status: 'PROCESSING',
+                  note: 'Shipment created – order moved to PROCESSING',
+                  changedBy: null,
+                  createdAt: new Date(),
+                },
+              },
+            },
+            { session },
+          );
+        }
+      });
+
+      if (!createdShipmentId) {
+        throw new BadRequestException('Unable to create shipment');
       }
 
-      return this.formatShipment(shipment);
-    });
+      const populated = await this.shipmentModel
+        .findById(createdShipmentId)
+        .populate('staffUserId', 'email name')
+        .populate({ path: 'orderId', select: 'status shippingAddress userId', populate: { path: 'userId', select: 'email' } });
+
+      if (!populated) {
+        throw new NotFoundException('Shipment not found after creation');
+      }
+
+      return this.formatShipment(populated);
+    } finally {
+      await session.endSession();
+    }
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -141,57 +160,36 @@ export class ShipmentsService {
     isAdmin: boolean,
     query?: { status?: string; staffId?: string; page?: number; limit?: number },
   ) {
-    const staffAlias = schema.users;
     const page = query?.page ?? 1;
     const limit = query?.limit ?? 20;
     const offset = (page - 1) * limit;
 
-    const conditions: SQL[] = [];
-
-    // STAFF can only see their own shipments
+    const filter: Record<string, unknown> = {};
     if (!isAdmin) {
-      conditions.push(eq(schema.shipments.staffUserId, userId));
+      filter.staffUserId = userId;
     }
 
     if (query?.status) {
-      conditions.push(eq(schema.shipments.status, query.status));
+      filter.status = query.status;
     }
 
     if (query?.staffId) {
-      conditions.push(eq(schema.shipments.staffUserId, query.staffId));
+      filter.staffUserId = query.staffId;
     }
 
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-    // Count
-    const [countResult] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(schema.shipments)
-      .leftJoin(staffAlias, eq(schema.shipments.staffUserId, staffAlias.id))
-      .leftJoin(schema.orders, eq(schema.shipments.orderId, schema.orders.id))
-      .where(whereClause);
-    const total = countResult?.count ?? 0;
-
-    const rows = await this.db
-      .select({
-        shipment: schema.shipments,
-        staffEmail: staffAlias.email,
-        staffName: staffAlias.name,
-        orderStatus: schema.orders.status,
-        shippingAddress: schema.orders.shippingAddress,
-      })
-      .from(schema.shipments)
-      .leftJoin(staffAlias, eq(schema.shipments.staffUserId, staffAlias.id))
-      .leftJoin(schema.orders, eq(schema.shipments.orderId, schema.orders.id))
-      .where(whereClause)
-      .orderBy(desc(schema.shipments.createdAt))
-      .limit(limit)
-      .offset(offset);
+    const [total, rows] = await Promise.all([
+      this.shipmentModel.countDocuments(filter),
+      this.shipmentModel
+        .find(filter)
+        .populate('staffUserId', 'email name')
+        .populate({ path: 'orderId', select: 'status shippingAddress userId', populate: { path: 'userId', select: 'email' } })
+        .sort({ createdAt: -1 })
+        .skip(offset)
+        .limit(limit),
+    ]);
 
     return {
-      data: rows.map((r) =>
-        this.formatShipment(r.shipment, r.staffEmail, r.staffName, r.orderStatus, null, r.shippingAddress),
-      ),
+      data: rows.map((row) => this.formatShipment(row)),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -201,36 +199,25 @@ export class ShipmentsService {
   // ──────────────────────────────────────────────────────────────
 
   async findById(id: string, userId: string, isAdmin: boolean) {
-    const rows = await this.db
-      .select({
-        shipment: schema.shipments,
-        staffEmail: schema.users.email,
-        staffName: schema.users.name,
-        orderStatus: schema.orders.status,
-      })
-      .from(schema.shipments)
-      .leftJoin(schema.users, eq(schema.shipments.staffUserId, schema.users.id))
-      .leftJoin(schema.orders, eq(schema.shipments.orderId, schema.orders.id))
-      .where(eq(schema.shipments.id, id))
-      .limit(1);
+    const shipment = await this.shipmentModel
+      .findById(id)
+      .populate('staffUserId', 'email name')
+      .populate({ path: 'orderId', select: 'status shippingAddress userId', populate: { path: 'userId', select: 'email' } });
 
-    if (rows.length === 0) {
+    if (!shipment) {
       throw new NotFoundException('Shipment not found');
     }
 
-    const row = rows[0];
+    const shipmentStaffId =
+      shipment.staffUserId && typeof shipment.staffUserId === 'object' && '_id' in (shipment.staffUserId as object)
+        ? String((shipment.staffUserId as { _id: Types.ObjectId })._id)
+        : String(shipment.staffUserId);
 
-    // STAFF can only view their own
-    if (!isAdmin && row.shipment.staffUserId !== userId) {
+    if (!isAdmin && shipmentStaffId !== userId) {
       throw new ForbiddenException('You do not have access to this shipment');
     }
 
-    return this.formatShipment(
-      row.shipment,
-      row.staffEmail,
-      row.staffName,
-      row.orderStatus,
-    );
+    return this.formatShipment(shipment);
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -238,49 +225,41 @@ export class ShipmentsService {
   // ──────────────────────────────────────────────────────────────
 
   async reassign(shipmentId: string, dto: AssignShipmentDto) {
-    // Validate shipment exists
-    const [shipment] = await this.db
-      .select()
-      .from(schema.shipments)
-      .where(eq(schema.shipments.id, shipmentId))
-      .limit(1);
+    const shipment = await this.shipmentModel.findById(shipmentId);
 
     if (!shipment) {
       throw new NotFoundException('Shipment not found');
     }
 
-    // Can only reassign shipments that are ASSIGNED or PENDING (declined)
     if (!['ASSIGNED', 'PENDING'].includes(shipment.status)) {
       throw new BadRequestException(
         `Can only reassign shipments in ASSIGNED or PENDING status (current: ${shipment.status})`,
       );
     }
 
-    // Validate new staff user
-    const [newStaff] = await this.db
-      .select({ id: schema.users.id, role: schema.users.role })
-      .from(schema.users)
-      .where(eq(schema.users.id, dto.staffUserId))
-      .limit(1);
+    const newStaff = await this.userModel.findById(dto.staffUserId).select('roles');
 
     if (!newStaff) {
       throw new NotFoundException('Staff user not found');
     }
 
-    if (newStaff.role !== 'staff') {
+    if (!(newStaff.roles ?? []).includes('STAFF')) {
       throw new BadRequestException('Assigned user must have the STAFF role');
     }
 
-    const [updated] = await this.db
-      .update(schema.shipments)
-      .set({
+    const updated = await this.shipmentModel.findByIdAndUpdate(
+      shipmentId,
+      {
         staffUserId: dto.staffUserId,
         status: 'ASSIGNED',
         assignedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.shipments.id, shipmentId))
-      .returning();
+      },
+      { new: true },
+    );
+
+    if (!updated) {
+      throw new NotFoundException('Shipment not found');
+    }
 
     return this.formatShipment(updated);
   }
@@ -295,23 +274,16 @@ export class ShipmentsService {
     userId: string,
     isAdmin: boolean,
   ) {
-    // 1) Fetch shipment
-    const [shipment] = await this.db
-      .select()
-      .from(schema.shipments)
-      .where(eq(schema.shipments.id, shipmentId))
-      .limit(1);
+    const shipment = await this.shipmentModel.findById(shipmentId);
 
     if (!shipment) {
       throw new NotFoundException('Shipment not found');
     }
 
-    // 2) STAFF can only update their own shipments
-    if (!isAdmin && shipment.staffUserId !== userId) {
+    if (!isAdmin && String(shipment.staffUserId) !== userId) {
       throw new ForbiddenException('You can only update your own shipments');
     }
 
-    // 3) Validate status transition
     const currentStatus = shipment.status;
     const allowed = SHIPMENT_STATUS_TRANSITIONS[currentStatus] ?? [];
 
@@ -322,53 +294,61 @@ export class ShipmentsService {
       );
     }
 
-    // 4) Map shipment status → order status for automatic sync
-    //    IN_TRANSIT (staff accepts) does NOT change the order — it stays PROCESSING.
-    //    Only DELIVERED and FAILED sync to the parent order.
     const orderStatusMap: Record<string, string> = {
       DELIVERED: 'DELIVERED',
       FAILED: 'FAILED',
     };
     const newOrderStatus = orderStatusMap[dto.status];
 
-    // 5) Transactionally update shipment + optionally sync order
-    const result = await this.db.transaction(async (tx) => {
-      const setFields: Record<string, unknown> = {
-        status: dto.status,
-        updatedAt: new Date(),
-      };
+    const session = await this.connection.startSession();
 
-      if (dto.status === 'DELIVERED') {
-        setFields.deliveredAt = new Date();
+    try {
+      let updatedShipment: ShipmentDocument | null = null;
+
+      await session.withTransaction(async () => {
+        const setFields: Record<string, unknown> = {
+          status: dto.status,
+        };
+
+        if (dto.status === 'DELIVERED') {
+          setFields.deliveredAt = new Date();
+        }
+
+        updatedShipment = await this.shipmentModel.findByIdAndUpdate(
+          shipmentId,
+          { $set: setFields },
+          { new: true, session },
+        );
+
+        if (newOrderStatus) {
+          await this.orderModel.findByIdAndUpdate(
+            shipment.orderId,
+            {
+              $set: { status: newOrderStatus },
+              $push: {
+                statusHistory: {
+                  status: newOrderStatus,
+                  note:
+                    dto.note ??
+                    `Shipment ${dto.status.replace(/_/g, ' ').toLowerCase()} – order moved to ${newOrderStatus}`,
+                  changedBy: userId,
+                  createdAt: new Date(),
+                },
+              },
+            },
+            { session },
+          );
+        }
+      });
+
+      if (!updatedShipment) {
+        throw new NotFoundException('Shipment not found');
       }
 
-      const [updated] = await tx
-        .update(schema.shipments)
-        .set(setFields)
-        .where(eq(schema.shipments.id, shipmentId))
-        .returning();
-
-      // Sync the parent order status
-      if (newOrderStatus) {
-        await tx
-          .update(schema.orders)
-          .set({ status: newOrderStatus, updatedAt: new Date() })
-          .where(eq(schema.orders.id, shipment.orderId));
-
-        await tx.insert(schema.orderStatusHistory).values({
-          orderId: shipment.orderId,
-          status: newOrderStatus,
-          note:
-            dto.note ??
-            `Shipment ${dto.status.replace(/_/g, ' ').toLowerCase()} – order moved to ${newOrderStatus}`,
-          changedBy: userId,
-        });
-      }
-
-      return updated;
-    });
-
-    return this.formatShipment(result);
+      return this.formatShipment(updatedShipment);
+    } finally {
+      await session.endSession();
+    }
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -376,17 +356,12 @@ export class ShipmentsService {
   // ──────────────────────────────────────────────────────────────
 
   async getStaffUsers() {
-    const rows = await this.db
-      .select({
-        id: schema.users.id,
-        email: schema.users.email,
-        name: schema.users.name,
-      })
-      .from(schema.users)
-      .where(eq(schema.users.role, 'staff'))
-      .orderBy(asc(schema.users.name));
+    const rows = await this.userModel
+      .find({ roles: 'STAFF' })
+      .select('email name')
+      .sort({ name: 1 });
 
-    return rows;
+    return rows.map((row) => row.toJSON());
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -394,33 +369,29 @@ export class ShipmentsService {
   // ──────────────────────────────────────────────────────────────
 
   async getAssignableOrders() {
-    const rows = await this.db
-      .select({
-        id: schema.orders.id,
-        status: schema.orders.status,
-        totalAmount: schema.orders.totalAmount,
-        customerEmail: schema.users.email,
-        shippingAddress: schema.orders.shippingAddress,
-        createdAt: schema.orders.createdAt,
-      })
-      .from(schema.orders)
-      .leftJoin(schema.users, eq(schema.orders.userId, schema.users.id))
-      .leftJoin(schema.shipments, eq(schema.orders.id, schema.shipments.orderId))
-      .where(
-        and(
-          sql`${schema.orders.status} IN ('ACCEPTED', 'PROCESSING')`,
-          sql`${schema.shipments.id} IS NULL`,
-        ),
-      )
-      .orderBy(desc(schema.orders.createdAt));
+    const [orders, shipments] = await Promise.all([
+      this.orderModel
+        .find({ status: { $in: ['ACCEPTED', 'PROCESSING'] } })
+        .populate('userId', 'email')
+        .sort({ createdAt: -1 }),
+      this.shipmentModel.find().select('orderId'),
+    ]);
 
-    return rows.map((r) => ({
-      id: r.id,
-      status: r.status,
-      totalAmount: Number(r.totalAmount) / 100,
-      customerEmail: r.customerEmail,
-      shippingAddress: r.shippingAddress,
-      createdAt: r.createdAt,
-    }));
+    const assignedOrderIds = new Set(shipments.map((shipment) => String(shipment.orderId)));
+
+    return orders
+      .filter((order) => !assignedOrderIds.has(order.id))
+      .map((order) => {
+        const plain = order.toJSON() as Record<string, any>;
+        return {
+          id: plain.id,
+          status: plain.status,
+          totalAmount: Number(plain.totalAmount) / 100,
+          customerEmail:
+            plain.userId && typeof plain.userId === 'object' ? plain.userId.email ?? null : null,
+          shippingAddress: plain.shippingAddress,
+          createdAt: plain.createdAt,
+        };
+      });
   }
 }

@@ -4,17 +4,17 @@ import {
   ArrayMinSize,
   IsArray,
   IsInt,
+  IsMongoId,
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUUID,
   Min,
   ValidateNested,
 } from 'class-validator';
 
 export class CreateOrderItemDto {
   @ApiProperty({ description: 'Product ID' })
-  @IsUUID()
+  @IsMongoId()
   productId: string;
 
   @ApiProperty({ description: 'Quantity to order', minimum: 1 })

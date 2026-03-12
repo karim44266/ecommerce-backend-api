@@ -3,7 +3,6 @@ import {
   Controller,
   Get,
   Param,
-  ParseUUIDPipe,
   Post,
   Req,
   UseGuards,
@@ -46,7 +45,7 @@ export class PaymentsController {
   @ApiNotFoundResponse({ description: 'Payment not found' })
   confirm(
     @Req() req: { user: JwtUser },
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body() dto: ConfirmPaymentDto,
   ) {
     return this.paymentsService.confirmPayment(
@@ -62,7 +61,7 @@ export class PaymentsController {
   @ApiNotFoundResponse({ description: 'Order not found' })
   getByOrder(
     @Req() req: { user: JwtUser },
-    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('orderId') orderId: string,
   ) {
     return this.paymentsService.getByOrderId(orderId, req.user.userId);
   }

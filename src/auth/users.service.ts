@@ -1,68 +1,33 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { DATABASE_CONNECTION } from '../database/database.constants';
-import * as schema from '../database/schema';
-import { User } from './entities/user.entity';
+import { Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { User, UserDocument } from '../users/schemas/user.schema';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @Inject(DATABASE_CONNECTION)
-    private readonly db: NodePgDatabase<typeof schema>,
-  ) {}
+  constructor(@InjectModel(User.name) private readonly userModel: Model<UserDocument>) {}
 
-  async findByEmail(email: string): Promise<User | null> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(schema.users.email, email),
+  async findByEmail(email: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ email: email.toLowerCase() });
+  }
+
+  async createUser(email: string, passwordHash: string): Promise<UserDocument> {
+    return this.userModel.create({
+      email: email.toLowerCase(),
+      passwordHash,
+      roles: ['CUSTOMER'],
     });
-
-    return user ?? null;
-  }
-
-  async createUser(email: string, passwordHash: string): Promise<User> {
-    const [user] = await this.db
-      .insert(schema.users)
-      .values({ email, passwordHash })
-      .returning();
-
-    return user;
-  }
-
-  async seedDefaultRoles(): Promise<void> {
-    await this.db
-      .insert(schema.roles)
-      .values([
-        { name: 'ADMIN' },
-        { name: 'STAFF' },
-        { name: 'CUSTOMER' },
-      ])
-      .onConflictDoNothing();
   }
 
   async getUserRoles(userId: string): Promise<string[]> {
-    const rows = await this.db
-      .select({ name: schema.roles.name })
-      .from(schema.userRoles)
-      .innerJoin(schema.roles, eq(schema.userRoles.roleId, schema.roles.id))
-      .where(eq(schema.userRoles.userId, userId));
-
-    return rows.map((row) => row.name);
+    const user = await this.userModel.findById(userId).select('roles');
+    return user?.roles ?? [];
   }
 
   async assignRoleToUser(userId: string, roleName: string): Promise<void> {
-    const role = await this.db.query.roles.findFirst({
-      where: eq(schema.roles.name, roleName),
+    await this.userModel.findByIdAndUpdate(userId, {
+      $addToSet: { roles: roleName.toUpperCase() },
     });
-
-    if (!role) {
-      return;
-    }
-
-    await this.db
-      .insert(schema.userRoles)
-      .values({ userId, roleId: role.id })
-      .onConflictDoNothing();
   }
 
   async ensureDefaultRole(userId: string): Promise<void> {
@@ -70,31 +35,28 @@ export class UsersService {
   }
 
   async setMfaOtp(email: string, otpHash: string, otpExpiresAt: Date): Promise<void> {
-    await this.db
-      .update(schema.users)
-      .set({ mfaOtpHash: otpHash, mfaOtpExpiresAt: otpExpiresAt })
-      .where(eq(schema.users.email, email));
+    await this.userModel.findOneAndUpdate(
+      { email: email.toLowerCase() },
+      { mfaOtpHash: otpHash, mfaOtpExpiresAt: otpExpiresAt },
+    );
   }
 
   async clearMfaOtp(email: string): Promise<void> {
-    await this.db
-      .update(schema.users)
-      .set({ mfaOtpHash: null, mfaOtpExpiresAt: null })
-      .where(eq(schema.users.email, email));
+    await this.userModel.findOneAndUpdate(
+      { email: email.toLowerCase() },
+      { mfaOtpHash: null, mfaOtpExpiresAt: null },
+    );
   }
 
-  async findById(userId: string): Promise<User | null> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(schema.users.id, userId),
-    });
-
-    return user ?? null;
+  async findById(userId: string): Promise<UserDocument | null> {
+    return this.userModel.findById(userId);
   }
 
   async toggleMfa(userId: string, enabled: boolean): Promise<void> {
-    await this.db
-      .update(schema.users)
-      .set({ mfaEnabled: enabled, mfaOtpHash: null, mfaOtpExpiresAt: null })
-      .where(eq(schema.users.id, userId));
+    await this.userModel.findByIdAndUpdate(userId, {
+      mfaEnabled: enabled,
+      mfaOtpHash: null,
+      mfaOtpExpiresAt: null,
+    });
   }
 }

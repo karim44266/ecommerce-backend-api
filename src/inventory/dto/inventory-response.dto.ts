@@ -2,10 +2,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // ───── Single inventory record ─────
 export class InventoryResponseDto {
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
+  @ApiProperty({ example: '67d07f0d34f2e8d7fc123456' })
   id: string;
 
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440001' })
+  @ApiProperty({ example: '67d07f0d34f2e8d7fc123457' })
   productId: string;
 
   @ApiProperty({ example: 'Bluetooth Speaker' })
@@ -74,7 +74,7 @@ export class InventorySummaryDto {
 
 // ───── Adjustment history entry ─────
 export class AdjustmentHistoryEntryDto {
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440005' })
+  @ApiProperty({ example: '67d07f0d34f2e8d7fc123458' })
   id: string;
 
   @ApiProperty({ example: -5 })

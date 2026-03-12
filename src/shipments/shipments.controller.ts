@@ -3,7 +3,6 @@ import {
   Controller,
   Get,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -102,7 +101,7 @@ export class ShipmentsController {
   @ApiForbiddenResponse({ description: 'Access denied (staff can only view own)' })
   findOne(
     @Req() req: { user: JwtUser },
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
   ) {
     const isAdmin = req.user.roles.includes('ADMIN');
     return this.shipmentsService.findById(id, req.user.userId, isAdmin);
@@ -118,7 +117,7 @@ export class ShipmentsController {
   @ApiForbiddenResponse({ description: 'Staff can only update own shipments' })
   updateStatus(
     @Req() req: { user: JwtUser },
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body() dto: UpdateShipmentStatusDto,
   ) {
     const isAdmin = req.user.roles.includes('ADMIN');
@@ -134,7 +133,7 @@ export class ShipmentsController {
   @ApiOkResponse({ description: 'Shipment reassigned' })
   @ApiNotFoundResponse({ description: 'Shipment not found' })
   reassign(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body() dto: AssignShipmentDto,
   ) {
     return this.shipmentsService.reassign(id, dto);

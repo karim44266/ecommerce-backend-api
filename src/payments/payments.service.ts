@@ -1,20 +1,23 @@
 import {
   BadRequestException,
   ForbiddenException,
-  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { eq, sql } from 'drizzle-orm';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { DATABASE_CONNECTION } from '../database/database.constants';
-import * as schema from '../database/schema';
+import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { Connection, Model } from 'mongoose';
+import { Order, OrderDocument } from '../orders/schemas/order.schema';
+import { Payment, PaymentDocument } from './schemas/payment.schema';
 
 @Injectable()
 export class PaymentsService {
   constructor(
-    @Inject(DATABASE_CONNECTION)
-    private readonly db: NodePgDatabase<typeof schema>,
+    @InjectModel(Payment.name)
+    private readonly paymentModel: Model<PaymentDocument>,
+    @InjectModel(Order.name)
+    private readonly orderModel: Model<OrderDocument>,
+    @InjectConnection()
+    private readonly connection: Connection,
   ) {}
 
   /**
@@ -23,17 +26,13 @@ export class PaymentsService {
    * The order must be in PENDING_PAYMENT status.
    */
   async createPayment(orderId: string, userId: string) {
-    // Verify order exists and belongs to user
-    const [order] = await this.db
-      .select()
-      .from(schema.orders)
-      .where(eq(schema.orders.id, orderId));
+    const order = await this.orderModel.findById(orderId);
 
     if (!order) {
       throw new NotFoundException('Order not found');
     }
 
-    if (order.userId !== userId) {
+    if (String(order.userId) !== userId) {
       throw new ForbiddenException('You do not have access to this order');
     }
 
@@ -43,31 +42,22 @@ export class PaymentsService {
       );
     }
 
-    // Check if payment already exists for this order
-    const [existing] = await this.db
-      .select()
-      .from(schema.payments)
-      .where(eq(schema.payments.orderId, orderId));
+    const existing = await this.paymentModel.findOne({ orderId });
 
     if (existing) {
-      // Return existing payment if still pending
       if (existing.status === 'PENDING') {
         return this.formatPayment(existing);
       }
       throw new BadRequestException('Payment already processed for this order');
     }
 
-    // Create new payment record
-    const [payment] = await this.db
-      .insert(schema.payments)
-      .values({
-        orderId,
-        amount: order.totalAmount,
-        status: 'PENDING',
-        provider: 'mock',
-        providerPaymentId: `mock_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-      })
-      .returning();
+    const payment = await this.paymentModel.create({
+      orderId,
+      amount: order.totalAmount,
+      status: 'PENDING',
+      provider: 'mock',
+      providerPaymentId: `mock_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+    });
 
     return this.formatPayment(payment);
   }
@@ -81,22 +71,15 @@ export class PaymentsService {
     userId: string,
     cardNumber?: string,
   ) {
-    const [payment] = await this.db
-      .select()
-      .from(schema.payments)
-      .where(eq(schema.payments.id, paymentId));
+    const payment = await this.paymentModel.findById(paymentId);
 
     if (!payment) {
       throw new NotFoundException('Payment not found');
     }
 
-    // Verify order ownership
-    const [order] = await this.db
-      .select()
-      .from(schema.orders)
-      .where(eq(schema.orders.id, payment.orderId));
+    const order = await this.orderModel.findById(payment.orderId);
 
-    if (!order || order.userId !== userId) {
+    if (!order || String(order.userId) !== userId) {
       throw new ForbiddenException('You do not have access to this payment');
     }
 
@@ -109,10 +92,7 @@ export class PaymentsService {
       cardNumber && cardNumber.replace(/\s/g, '').startsWith('0000');
 
     if (simulateFailure) {
-      await this.db
-        .update(schema.payments)
-        .set({ status: 'FAILED', updatedAt: new Date() })
-        .where(eq(schema.payments.id, paymentId));
+      await this.paymentModel.findByIdAndUpdate(paymentId, { status: 'FAILED' });
 
       return {
         id: payment.id,
@@ -122,54 +102,60 @@ export class PaymentsService {
       };
     }
 
-    // Mock success — update payment + order status in a transaction
-    const result = await this.db.transaction(async (tx) => {
-      const [updatedPayment] = await tx
-        .update(schema.payments)
-        .set({ status: 'COMPLETED', updatedAt: new Date() })
-        .where(eq(schema.payments.id, paymentId))
-        .returning();
+    const session = await this.connection.startSession();
 
-      await tx
-        .update(schema.orders)
-        .set({ status: 'PAID', updatedAt: new Date() })
-        .where(eq(schema.orders.id, payment.orderId));
+    try {
+      let updatedPayment: PaymentDocument | null = null;
 
-      // Add status history entry
-      await tx.insert(schema.orderStatusHistory).values({
-        orderId: payment.orderId,
-        status: 'PAID',
-        note: 'Payment confirmed (mock provider)',
-        changedBy: userId,
+      await session.withTransaction(async () => {
+        updatedPayment = await this.paymentModel.findByIdAndUpdate(
+          paymentId,
+          { status: 'COMPLETED' },
+          { new: true, session },
+        );
+
+        await this.orderModel.findByIdAndUpdate(
+          payment.orderId,
+          {
+            $set: { status: 'PAID' },
+            $push: {
+              statusHistory: {
+                status: 'PAID',
+                note: 'Payment confirmed (mock provider)',
+                changedBy: userId,
+                createdAt: new Date(),
+              },
+            },
+          },
+          { session },
+        );
       });
 
-      return updatedPayment;
-    });
+      if (!updatedPayment) {
+        throw new NotFoundException('Payment not found');
+      }
 
-    return this.formatPayment(result);
+      return this.formatPayment(updatedPayment);
+    } finally {
+      await session.endSession();
+    }
   }
 
   /**
    * Get payment by order ID (for the order owner).
    */
   async getByOrderId(orderId: string, userId: string) {
-    const [order] = await this.db
-      .select()
-      .from(schema.orders)
-      .where(eq(schema.orders.id, orderId));
+    const order = await this.orderModel.findById(orderId);
 
     if (!order) {
       throw new NotFoundException('Order not found');
     }
 
-    if (order.userId !== userId) {
+    if (String(order.userId) !== userId) {
       throw new ForbiddenException('You do not have access to this order');
     }
 
-    const [payment] = await this.db
-      .select()
-      .from(schema.payments)
-      .where(eq(schema.payments.orderId, orderId));
+    const payment = await this.paymentModel.findOne({ orderId });
 
     if (!payment) {
       return null;
@@ -178,17 +164,20 @@ export class PaymentsService {
     return this.formatPayment(payment);
   }
 
-  private formatPayment(payment: typeof schema.payments.$inferSelect) {
+  private formatPayment(payment: PaymentDocument | Record<string, any>) {
+    const plain = typeof (payment as PaymentDocument).toJSON === 'function'
+      ? ((payment as PaymentDocument).toJSON() as Record<string, any>)
+      : (payment as Record<string, any>);
     return {
-      id: payment.id,
-      orderId: payment.orderId,
-      amount: payment.amount / 100,
-      amountCents: payment.amount,
-      status: payment.status,
-      provider: payment.provider,
-      providerPaymentId: payment.providerPaymentId,
-      createdAt: payment.createdAt.toISOString(),
-      updatedAt: payment.updatedAt.toISOString(),
+      id: plain.id,
+      orderId: typeof plain.orderId === 'object' ? plain.orderId.id ?? String(plain.orderId._id) : String(plain.orderId),
+      amount: plain.amount / 100,
+      amountCents: plain.amount,
+      status: plain.status,
+      provider: plain.provider,
+      providerPaymentId: plain.providerPaymentId,
+      createdAt: new Date(plain.createdAt).toISOString(),
+      updatedAt: new Date(plain.updatedAt).toISOString(),
     };
   }
 }

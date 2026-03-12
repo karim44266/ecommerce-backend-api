@@ -4,7 +4,6 @@ import {
   Delete,
   Get,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -51,7 +50,7 @@ export class CategoriesController {
   @ApiOperation({ summary: 'Get category by ID' })
   @ApiOkResponse({ description: 'Category detail with product count', type: CategoryResponseDto })
   @ApiNotFoundResponse({ description: 'Category not found' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Param('id') id: string) {
     return this.categoriesService.findById(id);
   }
 
@@ -74,7 +73,7 @@ export class CategoriesController {
   @ApiOkResponse({ description: 'Updated category' })
   @ApiNotFoundResponse({ description: 'Category not found' })
   update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body() dto: UpdateCategoryDto,
   ) {
     return this.categoriesService.update(id, dto);
@@ -88,7 +87,7 @@ export class CategoriesController {
   @ApiOkResponse({ description: 'Deleted' })
   @ApiNotFoundResponse({ description: 'Category not found' })
   @ApiConflictResponse({ description: 'Category has products' })
-  remove(@Param('id', ParseUUIDPipe) id: string) {
+  remove(@Param('id') id: string) {
     return this.categoriesService.remove(id);
   }
 }
