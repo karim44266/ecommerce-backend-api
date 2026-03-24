@@ -8,11 +8,17 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { MailerService } from './mailer.service';
+import { AccountAppeal, AccountAppealSchema } from './schemas/account-appeal.schema';
+import { PasswordResetRequest, PasswordResetRequestSchema } from './schemas/password-reset-request.schema';
 import { UsersService } from './users.service';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+    MongooseModule.forFeature([
+      { name: User.name, schema: UserSchema },
+      { name: PasswordResetRequest.name, schema: PasswordResetRequestSchema },
+      { name: AccountAppeal.name, schema: AccountAppealSchema },
+    ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       useFactory: (config: ConfigService) => ({
