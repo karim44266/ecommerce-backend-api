@@ -5,10 +5,13 @@ import {
   Param,
   Patch,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { UsersService } from './users.service';
@@ -19,6 +22,37 @@ import { UsersService } from './users.service';
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  @Get('me')
+  @ApiOperation({ summary: 'Get current authenticated user profile' })
+  @ApiOkResponse({ description: 'Current user profile' })
+  me(@Req() request: { user: { userId: string } }) {
+    return this.usersService.findById(request.user.userId);
+  }
+
+  @Patch('me/profile')
+  @ApiOperation({ summary: 'Update current authenticated user profile' })
+  @ApiOkResponse({ description: 'Updated profile' })
+  updateOwnProfile(
+    @Req() request: { user: { userId: string } },
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.usersService.updateOwnProfile(request.user.userId, dto);
+  }
+
+  @Patch('me/password')
+  @ApiOperation({ summary: 'Change current authenticated user password' })
+  @ApiOkResponse({ description: 'Password changed' })
+  changeOwnPassword(
+    @Req() request: { user: { userId: string } },
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.usersService.changeOwnPassword(
+      request.user.userId,
+      dto.currentPassword,
+      dto.newPassword,
+    );
+  }
 
   @Get()
   @ApiOperation({ summary: 'List all users (admin only)' })

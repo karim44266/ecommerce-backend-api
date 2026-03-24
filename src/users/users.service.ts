@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import * as bcrypt from 'bcrypt';
 import { User, UserDocument } from './schemas/user.schema';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
 export class UsersService {
@@ -83,5 +85,41 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     return this.sanitize(updated);
+  }
+
+  async updateOwnProfile(userId: string, dto: UpdateProfileDto) {
+    const payload: Partial<User> = {};
+
+    if (dto.name !== undefined) {
+      payload.name = dto.name.trim();
+    }
+
+    const updated = await this.userModel.findByIdAndUpdate(userId, payload, { new: true });
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.sanitize(updated);
+  }
+
+  async changeOwnPassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.userModel.findById(userId).select('+passwordHash');
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const matches = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!matches) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    if (currentPassword === newPassword) {
+      throw new BadRequestException('New password must be different from current password');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.userModel.findByIdAndUpdate(userId, { passwordHash });
+
+    return { message: 'Password updated successfully' };
   }
 }
