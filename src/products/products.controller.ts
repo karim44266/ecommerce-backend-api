@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -21,30 +22,75 @@ import {
 } from '@nestjs/swagger';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { UsersService } from '../users/users.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
 import { ProductListResponseDto, ProductResponseDto } from './dto/product-response.dto';
+import { ToggleCatalogItemDto } from './dto/toggle-catalog-item.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
 
 @ApiTags('products')
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly usersService: UsersService,
+  ) {}
 
   @Get()
-  @ApiOperation({ summary: 'List products (public, with search/category/pagination)' })
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List products (with search/category/pagination)' })
   @ApiOkResponse({ description: 'Paginated product list', type: ProductListResponseDto })
-  findAll(@Query() query: ProductQueryDto) {
-    return this.productsService.findAll(query);
+  async findAll(@Query() query: ProductQueryDto, @Req() req: any) {
+    const isReseller = req.user.roles.includes('RESELLER');
+    if (isReseller) {
+      query.status = 'active'; // Enforce ERP published state
+    }
+    const personalCatalog = isReseller ? await this.usersService.getPersonalCatalog(req.user.userId) : [];
+    return this.productsService.findAll(query, { isReseller, personalCatalog });
+  }
+
+  @Get('personal')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List products currently in the reseller personal catalog' })
+  @ApiOkResponse({ description: 'Paginated product list', type: ProductListResponseDto })
+  async findPersonalCatalog(@Query() query: ProductQueryDto, @Req() req: any) {
+    const personalCatalog = await this.usersService.getPersonalCatalog(req.user.userId);
+    if (!personalCatalog.length) {
+      return { data: [], meta: { total: 0, page: 1, limit: query.limit || 20, totalPages: 0 } };
+    }
+    query.status = 'active'; // Only active products
+    return this.productsService.findAll(query, {
+      isReseller: true,
+      personalCatalog,
+      allowedProductIds: personalCatalog,
+    });
+  }
+
+  @Post('personal/toggle')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Toggle a product in the personal catalog' })
+  @ApiOkResponse({ description: 'Toggled state' })
+  async togglePersonalCatalog(@Body() dto: ToggleCatalogItemDto, @Req() req: any) {
+    return this.usersService.togglePersonalCatalogItem(req.user.userId, dto.productId);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get product by ID (public)' })
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get product by ID' })
   @ApiOkResponse({ description: 'Product detail', type: ProductResponseDto })
   @ApiNotFoundResponse({ description: 'Product not found' })
-  findOne(@Param('id') id: string) {
-    return this.productsService.findById(id);
+  async findOne(@Param('id') id: string, @Req() req: any) {
+    if (id === 'personal' || id === 'personal/toggle') return; // Guard for route collision
+
+    const isReseller = req.user.roles.includes('RESELLER');
+    const personalCatalog = isReseller ? await this.usersService.getPersonalCatalog(req.user.userId) : [];
+    return this.productsService.findById(id, { isReseller, personalCatalog });
   }
 
   @Post()
@@ -66,10 +112,7 @@ export class ProductsController {
   @ApiOkResponse({ description: 'Updated product' })
   @ApiNotFoundResponse({ description: 'Product not found' })
   @ApiConflictResponse({ description: 'Duplicate SKU' })
-  update(
-    @Param('id') id: string,
-    @Body() dto: UpdateProductDto,
-  ) {
+  update(@Param('id') id: string, @Body() dto: UpdateProductDto) {
     return this.productsService.update(id, dto);
   }
 

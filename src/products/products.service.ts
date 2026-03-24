@@ -27,7 +27,10 @@ export class ProductsService {
   }
 
   /** Map a raw DB row + category name to the API response shape. */
-  private toResponse(product: ProductDocument | Record<string, unknown>) {
+  private toResponse(
+    product: ProductDocument | Record<string, unknown>,
+    options?: { isReseller?: boolean; personalCatalog?: string[] },
+  ) {
     const plain = typeof (product as ProductDocument).toJSON === 'function'
       ? ((product as ProductDocument).toJSON() as Record<string, unknown> & { categoryId?: unknown })
       : (product as Record<string, unknown> & { categoryId?: unknown });
@@ -36,8 +39,11 @@ export class ProductsService {
         ? (plain.categoryId as Record<string, unknown>)
         : null;
 
-    return {
-      id: plain.id,
+    const price = Number(plain.price);
+    const productIdStr = String(plain.id || plain._id);
+
+    const baseResponse = {
+      id: productIdStr,
       name: plain.name,
       sku: plain.sku,
       description: plain.description,
@@ -51,11 +57,24 @@ export class ProductsService {
       createdAt: plain.createdAt,
       updatedAt: plain.updatedAt,
     };
+
+    if (options?.isReseller) {
+      Object.assign(baseResponse, {
+        resellerPrice: price * 0.8,
+        inPersonalCatalog: options.personalCatalog?.includes(productIdStr) ?? false,
+      });
+    }
+
+    return baseResponse;
   }
 
   /** Build WHERE conditions from query parameters. */
-  private async buildFilter(query: ProductQueryDto): Promise<FilterQuery<ProductDocument>> {
+  private async buildFilter(query: ProductQueryDto, allowedIds?: string[]): Promise<FilterQuery<ProductDocument>> {
     const conditions: FilterQuery<ProductDocument>[] = [];
+
+    if (allowedIds) {
+      conditions.push({ _id: { $in: allowedIds } } as FilterQuery<ProductDocument>);
+    }
 
     if (query.search) {
       conditions.push({ name: { $regex: this.escapeRegex(query.search), $options: 'i' } });
@@ -89,12 +108,15 @@ export class ProductsService {
     return { $and: conditions };
   }
 
-  async findAll(query: ProductQueryDto) {
+  async findAll(
+    query: ProductQueryDto,
+    options?: { allowedProductIds?: string[]; personalCatalog?: string[]; isReseller?: boolean },
+  ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const offset = (page - 1) * limit;
 
-    const filter = await this.buildFilter(query);
+    const filter = await this.buildFilter(query, options?.allowedProductIds);
 
     const sortColumnMap: Record<string, string> = {
       name: 'name',
@@ -118,7 +140,7 @@ export class ProductsService {
     ]);
 
     return {
-      data: rows.map((row) => this.toResponse(row)),
+      data: rows.map((row) => this.toResponse(row, options)),
       meta: {
         total,
         page,
@@ -128,14 +150,14 @@ export class ProductsService {
     };
   }
 
-  async findById(id: string) {
+  async findById(id: string, options?: { isReseller?: boolean; personalCatalog?: string[] }) {
     const product = await this.productModel.findById(id).populate('categoryId', 'name');
 
     if (!product) {
       throw new NotFoundException('Product not found');
     }
 
-    return this.toResponse(product);
+    return this.toResponse(product, options);
   }
 
   async create(dto: CreateProductDto) {
