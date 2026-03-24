@@ -4,21 +4,27 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   Req,
   UseGuards,
+  ConflictException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiBearerAuth, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiCreatedResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags, ApiConflictResponse } from '@nestjs/swagger';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
+import * as bcrypt from 'bcrypt';
 import { UsersService } from './users.service';
 
 @ApiTags('users')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), RolesGuard)
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -55,6 +61,7 @@ export class UsersController {
   }
 
   @Get()
+  @Roles('ADMIN')
   @ApiOperation({ summary: 'List all users (admin only)' })
   @ApiOkResponse({ description: 'Paginated user list' })
   findAll(
@@ -69,7 +76,24 @@ export class UsersController {
     });
   }
 
+  @Post()
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Create a new user (admin only)' })
+  @ApiCreatedResponse({ description: 'User created successfully' })
+  @ApiConflictResponse({ description: 'Email already exists' })
+  async create(@Body() dto: CreateUserDto) {
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const user = await this.usersService.createUser(dto.email, passwordHash, dto.role || 'CUSTOMER');
+    return {
+      id: user.id,
+      email: user.email,
+      roles: user.roles,
+      status: user.status,
+    };
+  }
+
   @Get(':id')
+  @Roles('ADMIN')
   @ApiOperation({ summary: 'Get user by ID (admin only)' })
   @ApiOkResponse({ description: 'User detail' })
   @ApiNotFoundResponse({ description: 'User not found' })
@@ -78,6 +102,7 @@ export class UsersController {
   }
 
   @Patch(':id/role')
+  @Roles('ADMIN')
   @ApiOperation({ summary: 'Update user role (admin only)' })
   @ApiOkResponse({ description: 'Updated user' })
   @ApiNotFoundResponse({ description: 'User not found' })
@@ -89,6 +114,7 @@ export class UsersController {
   }
 
   @Patch(':id/status')
+  @Roles('ADMIN')
   @ApiOperation({ summary: 'Block / unblock user (admin only)' })
   @ApiOkResponse({ description: 'Updated user' })
   @ApiNotFoundResponse({ description: 'User not found' })

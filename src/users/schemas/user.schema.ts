@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import mongoose, { HydratedDocument } from 'mongoose';
 import { applyCommonSchemaOptions } from '../../common/mongoose/schema-transform';
 
 export type UserDocument = HydratedDocument<User>;
@@ -29,6 +29,9 @@ export class User {
 
   @Prop({ type: Date, default: null })
   mfaOtpExpiresAt: Date | null;
+
+  @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }], default: [] })
+  personalCatalog: mongoose.Types.ObjectId[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
