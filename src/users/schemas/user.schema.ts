@@ -29,6 +29,12 @@ export class User {
 
   @Prop({ type: Date, default: null })
   mfaOtpExpiresAt: Date | null;
+
+  @Prop({ type: String, default: null })
+  refreshTokenHash: string | null;
+
+  @Prop({ type: Date, default: null })
+  refreshTokenExpiresAt: Date | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
