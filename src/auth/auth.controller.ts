@@ -3,6 +3,7 @@ import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBearerAuth,
   ApiConflictResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -11,10 +12,12 @@ import {
 } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
+import { BlockedAppealDto } from './dto/blocked-appeal.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { MfaToggleDto } from './dto/mfa-toggle.dto';
 import { MfaVerifyDto } from './dto/mfa-verify.dto';
-import { RegisterDto } from './dto/register.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -23,17 +26,18 @@ export class AuthController {
 
   @Post('login')
   @ApiOperation({ summary: 'Authenticate with email and password' })
-  @ApiOkResponse({ description: 'Returns access token or MFA challenge' })
+  @ApiOkResponse({ description: 'Returns access token + refresh token, or MFA challenge' })
   @ApiUnauthorizedResponse({ description: 'Invalid credentials' })
+  @ApiForbiddenResponse({ description: 'Account is blocked' })
   async login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new account' })
-  @ApiOkResponse({ description: 'Returns access token for the new account' })
+  @ApiOkResponse({ description: 'Returns access token + refresh token for the new account' })
   @ApiConflictResponse({ description: 'Email already registered' })
-  async register(@Body() dto: RegisterDto) {
+  async register(@Body() dto: { email: string; password: string }) {
     return this.authService.register(dto);
   }
 
@@ -56,7 +60,7 @@ export class AuthController {
     },
   })
   @ApiOperation({ summary: 'Verify MFA OTP code' })
-  @ApiOkResponse({ description: 'Returns access token on valid OTP' })
+  @ApiOkResponse({ description: 'Returns access token + refresh token on valid OTP' })
   @ApiUnauthorizedResponse({ description: 'Invalid or expired OTP' })
   @ApiTooManyRequestsResponse({ description: 'Too many verification attempts' })
   async verifyMfa(@Body() dto: MfaVerifyDto) {
@@ -74,5 +78,53 @@ export class AuthController {
     @Body() dto: MfaToggleDto,
   ) {
     return this.authService.toggleMfa(request.user.userId, dto);
+  }
+
+  // --- Refresh Token ---
+
+  @Post('refresh')
+  @ApiOperation({ summary: 'Refresh access token using a valid refresh token' })
+  @ApiOkResponse({ description: 'Returns new access token + refresh token' })
+  @ApiUnauthorizedResponse({ description: 'Invalid or expired refresh token' })
+  async refresh(@Body() dto: RefreshTokenDto) {
+    return this.authService.refresh(dto.refreshToken);
+  }
+
+  @Post('logout')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Logout and invalidate refresh token' })
+  @ApiOkResponse({ description: 'Logged out successfully' })
+  async logout(@Req() request: { user: { userId: string } }) {
+    return this.authService.logout(request.user.userId);
+  }
+
+  // --- Forgot Password ---
+
+  @Post('forgot-password')
+  @ApiOperation({ summary: 'Submit a forgot-password request for admin review' })
+  @ApiOkResponse({ description: 'Request submitted successfully' })
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  // --- Blocked Account Appeal ---
+
+  @Post('blocked-appeal')
+  @ApiOperation({ summary: 'Submit an appeal for a blocked account' })
+  @ApiOkResponse({ description: 'Appeal submitted successfully' })
+  async blockedAppeal(@Body() dto: BlockedAppealDto) {
+    return this.authService.submitBlockedAppeal(dto);
+  }
+
+  // --- Inactivity Config ---
+
+  @Get('inactivity-config')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get inactivity timeout configuration' })
+  @ApiOkResponse({ description: 'Returns timeout in minutes' })
+  getInactivityConfig() {
+    return this.authService.getInactivityConfig();
   }
 }

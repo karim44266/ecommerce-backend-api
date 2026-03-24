@@ -80,7 +80,15 @@ export class UsersService {
   }
 
   async updateStatus(id: string, status: string) {
-    const updated = await this.userModel.findByIdAndUpdate(id, { status }, { new: true });
+    const updateFields: Record<string, unknown> = { status };
+
+    // When blocking a user, invalidate their refresh token to kill active sessions
+    if (status === 'blocked') {
+      updateFields.refreshTokenHash = null;
+      updateFields.refreshTokenExpiresAt = null;
+    }
+
+    const updated = await this.userModel.findByIdAndUpdate(id, updateFields, { new: true });
     if (!updated) {
       throw new NotFoundException('User not found');
     }
