@@ -74,7 +74,7 @@ export class ShipmentsController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get orders eligible for shipment assignment (ACCEPTED/PROCESSING without existing shipment)' })
+  @ApiOperation({ summary: 'Get orders eligible for shipment assignment (CONFIRMED/IN_PREPARATION without existing shipment)' })
   @ApiOkResponse({ description: 'List of assignable orders' })
   getAssignableOrders() {
     return this.shipmentsService.getAssignableOrders();

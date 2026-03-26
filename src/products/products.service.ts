@@ -84,6 +84,21 @@ export class ProductsService {
       conditions.push({ status: query.status });
     }
 
+    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+      const priceFilter: Record<string, number> = {};
+      if (query.minPrice !== undefined) {
+        priceFilter.$gte = query.minPrice;
+      }
+      if (query.maxPrice !== undefined) {
+        priceFilter.$lte = query.maxPrice;
+      }
+      conditions.push({ price: priceFilter });
+    }
+
+    if (query.inStock === true) {
+      conditions.push({ inventory: { $gt: 0 } } as FilterQuery<ProductDocument>);
+    }
+
     if (query.categoryId) {
       conditions.push({ categoryId: query.categoryId });
     } else if (query.category) {

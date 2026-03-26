@@ -72,9 +72,9 @@ export class ShipmentsService {
       throw new NotFoundException('Order not found');
     }
 
-    if (!['ACCEPTED', 'PROCESSING'].includes(order.status)) {
+    if (!['CONFIRMED', 'IN_PREPARATION'].includes(order.status)) {
       throw new BadRequestException(
-        `Order must be in ACCEPTED or PROCESSING status to create a shipment (current: ${order.status})`,
+        `Order must be in CONFIRMED or IN_PREPARATION status to create a shipment (current: ${order.status})`,
       );
     }
 
@@ -113,15 +113,15 @@ export class ShipmentsService {
         );
         createdShipmentId = shipment.id;
 
-        if (order.status === 'ACCEPTED') {
+        if (order.status === 'CONFIRMED') {
           await this.orderModel.findByIdAndUpdate(
             dto.orderId,
             {
-              $set: { status: 'PROCESSING' },
+              $set: { status: 'IN_PREPARATION' },
               $push: {
                 statusHistory: {
-                  status: 'PROCESSING',
-                  note: 'Shipment created – order moved to PROCESSING',
+                  status: 'IN_PREPARATION',
+                  note: 'Shipment created – order moved to IN_PREPARATION',
                   changedBy: null,
                   createdAt: new Date(),
                 },
@@ -296,7 +296,7 @@ export class ShipmentsService {
 
     const orderStatusMap: Record<string, string> = {
       DELIVERED: 'DELIVERED',
-      FAILED: 'FAILED',
+      FAILED: 'IN_PREPARATION',
     };
     const newOrderStatus = orderStatusMap[dto.status];
 
@@ -365,13 +365,13 @@ export class ShipmentsService {
   }
 
   // ──────────────────────────────────────────────────────────────
-  //  Get Assignable Orders (ACCEPTED/PROCESSING without a shipment)
+  //  Get Assignable Orders (CONFIRMED/IN_PREPARATION without a shipment)
   // ──────────────────────────────────────────────────────────────
 
   async getAssignableOrders() {
     const [orders, shipments] = await Promise.all([
       this.orderModel
-        .find({ status: { $in: ['ACCEPTED', 'PROCESSING'] } })
+        .find({ status: { $in: ['CONFIRMED', 'IN_PREPARATION'] } })
         .populate('userId', 'email')
         .sort({ createdAt: -1 }),
       this.shipmentModel.find().select('orderId'),

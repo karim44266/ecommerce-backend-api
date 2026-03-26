@@ -8,9 +8,11 @@ import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, FilterQuery, Model, Types } from 'mongoose';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { UpdateOrderDto } from './dto/update-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderQueryDto } from './dto/order-query.dto';
 import { UpdateOrderStatusDto, STATUS_TRANSITIONS } from './dto/update-order-status.dto';
+import { ErpSyncService } from './erp-sync.service';
 import { UpdateTrackingDto } from './dto/update-tracking.dto';
 import { Order, OrderDocument } from './schemas/order.schema';
 
@@ -23,6 +25,7 @@ export class OrdersService {
     private readonly productModel: Model<ProductDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    private readonly erpSyncService: ErpSyncService,
     @InjectConnection()
     private readonly connection: Connection,
   ) {}
@@ -36,6 +39,19 @@ export class OrdersService {
   // ────────────────────────────────────────────────────────────────
 
   async create(userId: string, dto: CreateOrderDto) {
+    const orderingUser = await this.userModel
+      .findById(userId)
+      .select('roles personalCatalog');
+
+    if (!orderingUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    const isReseller = (orderingUser.roles ?? []).includes('RESELLER');
+    const personalCatalogSet = new Set(
+      (orderingUser.personalCatalog ?? []).map((id) => id.toString()),
+    );
+
     const productIds = dto.items.map((i) => i.productId);
 
     const dbProducts = await this.productModel.find({ _id: { $in: productIds } });
@@ -46,6 +62,11 @@ export class OrdersService {
       const product = productMap.get(item.productId);
       if (!product) {
         throw new NotFoundException(`Product ${item.productId} not found`);
+      }
+      if (isReseller && !personalCatalogSet.has(item.productId)) {
+        throw new ForbiddenException(
+          `Product "${product.name}" is not in your personal catalog`,
+        );
       }
       if (product.status !== 'active') {
         throw new BadRequestException(`Product "${product.name}" is not available`);
@@ -60,7 +81,8 @@ export class OrdersService {
     let totalCents = 0;
     const itemsWithPrice = dto.items.map((item) => {
       const product = productMap.get(item.productId)!;
-      const unitPriceCents = Math.round(product.price * 100);
+      const effectiveUnitPrice = isReseller ? product.price * 0.8 : product.price;
+      const unitPriceCents = Math.round(effectiveUnitPrice * 100);
       totalCents += unitPriceCents * item.quantity;
       return {
         productId: item.productId,
@@ -99,7 +121,7 @@ export class OrdersService {
           [
             {
               userId,
-              status: 'PENDING',
+              status: 'DRAFT',
               totalAmount: totalCents,
               shippingAddress: dto.shippingAddress,
               items: itemsWithPrice.map((item) => ({
@@ -110,8 +132,8 @@ export class OrdersService {
               })),
               statusHistory: [
                 {
-                  status: 'PENDING',
-                  note: 'Order placed – awaiting admin confirmation',
+                  status: 'DRAFT',
+                  note: 'Order created in draft state',
                   changedBy: userId,
                   createdAt: new Date(),
                 },
@@ -159,6 +181,17 @@ export class OrdersService {
       conditions.push({ createdAt: { ...(conditions.find((condition) => 'createdAt' in condition)?.createdAt as object), $lte: toDate } });
     }
 
+    const totalAmountRange: Record<string, number> = {};
+    if (query.minTotal !== undefined) {
+      totalAmountRange.$gte = Math.round(query.minTotal * 100);
+    }
+    if (query.maxTotal !== undefined) {
+      totalAmountRange.$lte = Math.round(query.maxTotal * 100);
+    }
+    if (Object.keys(totalAmountRange).length > 0) {
+      conditions.push({ totalAmount: totalAmountRange });
+    }
+
     const filter: FilterQuery<OrderDocument> =
       conditions.length === 0 ? {} : conditions.length === 1 ? conditions[0] : { $and: conditions };
 
@@ -169,6 +202,12 @@ export class OrdersService {
       if (Types.ObjectId.isValid(query.search)) {
         orConditions.push({ _id: new Types.ObjectId(query.search) });
       }
+
+      orConditions.push(
+        { 'shippingAddress.fullName': { $regex: escaped, $options: 'i' } },
+        { 'shippingAddress.clientEmail': { $regex: escaped, $options: 'i' } },
+        { 'shippingAddress.clientPhone': { $regex: escaped, $options: 'i' } },
+      );
 
       const matchingUsers = await this.userModel
         .find({ email: { $regex: escaped, $options: 'i' } })
@@ -268,6 +307,10 @@ export class OrdersService {
       );
     }
 
+    if (dto.status === 'CANCELLED' && (!dto.note || dto.note.trim().length === 0)) {
+      throw new BadRequestException('Cancellation reason is required before shipment');
+    }
+
     const updated = await this.orderModel.findByIdAndUpdate(
       orderId,
       {
@@ -288,7 +331,241 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
+    if (dto.status === 'CONFIRMED') {
+      void this.erpSyncService.pushOrderToErp(updated.id);
+    }
+
     return this.formatOrder(updated);
+  }
+
+  async updateOrder(
+    orderId: string,
+    userId: string,
+    isAdmin: boolean,
+    dto: UpdateOrderDto,
+  ) {
+    const order = await this.orderModel.findById(orderId);
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (!isAdmin && String(order.userId) !== userId) {
+      throw new ForbiddenException('You do not have access to this order');
+    }
+
+    if (!['DRAFT', 'CONFIRMED'].includes(order.status)) {
+      throw new BadRequestException('Only DRAFT or CONFIRMED orders can be edited');
+    }
+
+    const hasItems = Array.isArray(dto.items) && dto.items.length > 0;
+    const hasAddress = !!dto.shippingAddress;
+
+    if (!hasItems && !hasAddress) {
+      throw new BadRequestException('Provide at least items or shippingAddress to update');
+    }
+
+    const orderingUser = await this.userModel.findById(String(order.userId)).select('roles personalCatalog');
+    if (!orderingUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    const isReseller = (orderingUser.roles ?? []).includes('RESELLER');
+    const personalCatalogSet = new Set(
+      (orderingUser.personalCatalog ?? []).map((id) => id.toString()),
+    );
+
+    const currentItems = order.items ?? [];
+    const currentQtyByProduct = new Map<string, number>();
+    for (const item of currentItems) {
+      const productId = String(item.productId);
+      currentQtyByProduct.set(productId, (currentQtyByProduct.get(productId) ?? 0) + item.quantity);
+    }
+
+    const targetItems = hasItems
+      ? dto.items!.map((item) => ({ productId: item.productId, quantity: item.quantity }))
+      : currentItems.map((item) => ({ productId: String(item.productId), quantity: item.quantity }));
+
+    const productIds = Array.from(new Set(targetItems.map((item) => item.productId)));
+    const dbProducts = await this.productModel.find({ _id: { $in: productIds } });
+    const productMap = new Map(dbProducts.map((product) => [product.id, product]));
+
+    for (const item of targetItems) {
+      const product = productMap.get(item.productId);
+      if (!product) {
+        throw new NotFoundException(`Product ${item.productId} not found`);
+      }
+      if (isReseller && !personalCatalogSet.has(item.productId)) {
+        throw new ForbiddenException(`Product "${product.name}" is not in your personal catalog`);
+      }
+      if (product.status !== 'active') {
+        throw new BadRequestException(`Product "${product.name}" is not available`);
+      }
+    }
+
+    const targetQtyByProduct = new Map<string, number>();
+    for (const item of targetItems) {
+      targetQtyByProduct.set(item.productId, (targetQtyByProduct.get(item.productId) ?? 0) + item.quantity);
+    }
+
+    const allProductIds = new Set<string>([
+      ...Array.from(currentQtyByProduct.keys()),
+      ...Array.from(targetQtyByProduct.keys()),
+    ]);
+
+    let totalCents = 0;
+    const itemsWithPrice = targetItems.map((item) => {
+      const product = productMap.get(item.productId)!;
+      const effectiveUnitPrice = isReseller ? product.price * 0.8 : product.price;
+      const unitPriceCents = Math.round(effectiveUnitPrice * 100);
+      totalCents += unitPriceCents * item.quantity;
+      return {
+        productId: item.productId,
+        name: product.name,
+        quantity: item.quantity,
+        unitPrice: unitPriceCents,
+      };
+    });
+
+    const session = await this.connection.startSession();
+
+    try {
+      let updatedOrder: OrderDocument | null = null;
+
+      await session.withTransaction(async () => {
+        for (const productId of allProductIds) {
+          const currentQty = currentQtyByProduct.get(productId) ?? 0;
+          const targetQty = targetQtyByProduct.get(productId) ?? 0;
+          const delta = targetQty - currentQty;
+
+          if (delta > 0) {
+            const inventoryUpdated = await this.productModel.findOneAndUpdate(
+              { _id: productId, inventory: { $gte: delta } },
+              {
+                $inc: {
+                  inventory: -delta,
+                  'inventoryInfo.quantity': -delta,
+                },
+              },
+              { new: true, session },
+            );
+
+            if (!inventoryUpdated) {
+              const product = productMap.get(productId);
+              throw new BadRequestException(
+                `Insufficient stock for "${product?.name ?? productId}" while updating order`,
+              );
+            }
+          }
+
+          if (delta < 0) {
+            await this.productModel.findByIdAndUpdate(
+              productId,
+              {
+                $inc: {
+                  inventory: -delta,
+                  'inventoryInfo.quantity': -delta,
+                },
+              },
+              { session },
+            );
+          }
+        }
+
+        updatedOrder = await this.orderModel.findByIdAndUpdate(
+          orderId,
+          {
+            $set: {
+              items: itemsWithPrice,
+              totalAmount: totalCents,
+              ...(hasAddress ? { shippingAddress: dto.shippingAddress } : {}),
+            },
+            $push: {
+              statusHistory: {
+                status: order.status,
+                note: 'Order edited',
+                changedBy: userId,
+                createdAt: new Date(),
+              },
+            },
+          },
+          { new: true, session },
+        );
+      });
+
+      if (!updatedOrder) {
+        throw new NotFoundException('Order not found');
+      }
+
+      return this.formatOrder(updatedOrder);
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async cancelOrder(orderId: string, userId: string, isAdmin: boolean, reason: string) {
+    const order = await this.orderModel.findById(orderId);
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (!isAdmin && String(order.userId) !== userId) {
+      throw new ForbiddenException('You do not have access to this order');
+    }
+
+    if (!reason || reason.trim().length === 0) {
+      throw new BadRequestException('Cancellation reason is required before shipment');
+    }
+
+    if (!['DRAFT', 'CONFIRMED', 'IN_PREPARATION'].includes(order.status)) {
+      throw new BadRequestException('Only orders before delivery can be cancelled');
+    }
+
+    const session = await this.connection.startSession();
+
+    try {
+      let cancelledOrder: OrderDocument | null = null;
+
+      await session.withTransaction(async () => {
+        for (const item of order.items ?? []) {
+          await this.productModel.findByIdAndUpdate(
+            item.productId,
+            {
+              $inc: {
+                inventory: item.quantity,
+                'inventoryInfo.quantity': item.quantity,
+              },
+            },
+            { session },
+          );
+        }
+
+        cancelledOrder = await this.orderModel.findByIdAndUpdate(
+          orderId,
+          {
+            $set: { status: 'CANCELLED' },
+            $push: {
+              statusHistory: {
+                status: 'CANCELLED',
+                note: reason.trim(),
+                changedBy: userId,
+                createdAt: new Date(),
+              },
+            },
+          },
+          { new: true, session },
+        );
+      });
+
+      if (!cancelledOrder) {
+        throw new NotFoundException('Order not found');
+      }
+
+      return this.formatOrder(cancelledOrder);
+    } finally {
+      await session.endSession();
+    }
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -378,6 +655,11 @@ export class OrdersService {
       shippingAddress: plain.shippingAddress,
       trackingNumber: plain.trackingNumber,
       carrier: plain.carrier,
+      erpReference: plain.erpReference ?? null,
+      erpSyncStatus: plain.erpSyncStatus ?? 'NOT_SYNCED',
+      erpSyncAttempts: plain.erpSyncAttempts ?? 0,
+      erpLastSyncError: plain.erpLastSyncError ?? null,
+      erpLastSyncedAt: plain.erpLastSyncedAt ?? null,
       customerEmail: customer?.email,
       items: (plain.items ?? []).map((item: Record<string, any>) => ({
         id: item.id ?? String(item._id),

@@ -2,14 +2,12 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export const ORDER_STATUSES = [
-  'PENDING',
-  'ACCEPTED',
-  'PROCESSING',
+  'DRAFT',
+  'CONFIRMED',
+  'IN_PREPARATION',
   'DELIVERED',
-  'COMPLETED',
+  'SETTLED',
   'CANCELLED',
-  'REFUNDED',
-  'FAILED',
 ] as const;
 
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
@@ -19,21 +17,19 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
  * Key = current status, Value = allowed next statuses.
  */
 export const STATUS_TRANSITIONS: Record<string, string[]> = {
-  PENDING: ['ACCEPTED', 'CANCELLED'],
-  ACCEPTED: ['PROCESSING', 'CANCELLED'],
-  PROCESSING: ['DELIVERED', 'CANCELLED'],
-  DELIVERED: ['COMPLETED', 'REFUNDED'],
-  COMPLETED: [],
+  DRAFT: ['CONFIRMED', 'CANCELLED'],
+  CONFIRMED: ['IN_PREPARATION', 'CANCELLED'],
+  IN_PREPARATION: ['DELIVERED', 'CANCELLED'],
+  DELIVERED: ['SETTLED'],
+  SETTLED: [],
   CANCELLED: [],
-  REFUNDED: [],
-  FAILED: ['PROCESSING'],
 };
 
 export class UpdateOrderStatusDto {
   @ApiProperty({
     enum: ORDER_STATUSES,
     description: 'The new order status',
-    example: 'PROCESSING',
+    example: 'IN_PREPARATION',
   })
   @IsString()
   @IsNotEmpty()

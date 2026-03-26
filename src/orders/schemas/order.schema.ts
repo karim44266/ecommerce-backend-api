@@ -43,6 +43,8 @@ export class ShippingAddress {
   @Prop() state: string;
   @Prop() postalCode: string;
   @Prop() country: string;
+  @Prop() clientPhone: string;
+  @Prop() clientEmail: string;
 }
 
 export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
@@ -54,7 +56,7 @@ export class Order {
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true })
   userId: mongoose.Types.ObjectId;
 
-  @Prop({ default: 'PENDING', index: true })
+  @Prop({ default: 'DRAFT', index: true })
   status: string;
 
   @Prop({ required: true })
@@ -68,6 +70,21 @@ export class Order {
 
   @Prop({ type: String, default: null })
   carrier: string | null;
+
+  @Prop({ type: String, default: null, index: true })
+  erpReference: string | null;
+
+  @Prop({ type: String, default: 'NOT_SYNCED', index: true })
+  erpSyncStatus: 'NOT_SYNCED' | 'PENDING' | 'SYNCED' | 'FAILED';
+
+  @Prop({ type: Number, default: 0 })
+  erpSyncAttempts: number;
+
+  @Prop({ type: String, default: null })
+  erpLastSyncError: string | null;
+
+  @Prop({ type: Date, default: null })
+  erpLastSyncedAt: Date | null;
 
   @Prop({ type: [OrderItemSchema], default: [] })
   items: OrderItem[];

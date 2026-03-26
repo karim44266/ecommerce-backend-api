@@ -1,15 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsOptional, IsString, Min, IsDateString } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Min, IsDateString, IsNumber } from 'class-validator';
 import { Type } from 'class-transformer';
 
 const ORDER_STATUSES = [
-  'PENDING',
-  'ACCEPTED',
-  'PROCESSING',
+  'DRAFT',
+  'CONFIRMED',
+  'IN_PREPARATION',
   'DELIVERED',
+  'SETTLED',
   'CANCELLED',
-  'REFUNDED',
-  'FAILED',
 ] as const;
 
 export class OrderQueryDto {
@@ -32,6 +31,20 @@ export class OrderQueryDto {
   @IsOptional()
   @IsDateString()
   to?: string;
+
+  @ApiPropertyOptional({ description: 'Minimum total amount (major currency units)', example: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  minTotal?: number;
+
+  @ApiPropertyOptional({ description: 'Maximum total amount (major currency units)', example: 500 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  maxTotal?: number;
 
   @ApiPropertyOptional({ description: 'Page number', default: 1 })
   @IsOptional()

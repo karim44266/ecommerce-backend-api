@@ -21,8 +21,10 @@ import {
 } from '@nestjs/swagger';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderQueryDto } from './dto/order-query.dto';
+import { UpdateOrderDto } from './dto/update-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { UpdateTrackingDto } from './dto/update-tracking.dto';
 import { OrdersService } from './orders.service';
@@ -68,6 +70,36 @@ export class OrdersController {
   findOne(@Req() req: { user: JwtUser }, @Param('id') id: string) {
     const isAdmin = req.user.roles.includes('ADMIN');
     return this.ordersService.findById(id, req.user.userId, isAdmin);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Edit order (owner or admin, only DRAFT/CONFIRMED)' })
+  @ApiOkResponse({ description: 'Updated order' })
+  @ApiBadRequestResponse({ description: 'Order not editable in current status' })
+  @ApiForbiddenResponse({ description: 'Access denied' })
+  @ApiNotFoundResponse({ description: 'Order not found' })
+  updateOrder(
+    @Req() req: { user: JwtUser },
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderDto,
+  ) {
+    const isAdmin = req.user.roles.includes('ADMIN');
+    return this.ordersService.updateOrder(id, req.user.userId, isAdmin, dto);
+  }
+
+  @Post(':id/cancel')
+  @ApiOperation({ summary: 'Cancel order (owner or admin, reason required before shipment)' })
+  @ApiOkResponse({ description: 'Cancelled order' })
+  @ApiBadRequestResponse({ description: 'Invalid cancellation request' })
+  @ApiForbiddenResponse({ description: 'Access denied' })
+  @ApiNotFoundResponse({ description: 'Order not found' })
+  cancelOrder(
+    @Req() req: { user: JwtUser },
+    @Param('id') id: string,
+    @Body() dto: CancelOrderDto,
+  ) {
+    const isAdmin = req.user.roles.includes('ADMIN');
+    return this.ordersService.cancelOrder(id, req.user.userId, isAdmin, dto.reason);
   }
 
   // ── Update Status (ADMIN) ──────────────────────────────────────
