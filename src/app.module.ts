@@ -8,7 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { OrdersModule } from './orders/orders.module';
-// PaymentsModule removed – cash on delivery, no online payments
+import { FinanceModule } from './finance/finance.module';
 import { ProductsModule } from './products/products.module';
 import { ShipmentsModule } from './shipments/shipments.module';
 import { UsersModule } from './users/users.module';
@@ -39,6 +39,7 @@ import { AppService } from './app.service';
     AuthModule,
     CategoriesModule,
     InventoryModule,
+    FinanceModule,
     OrdersModule,
     ProductsModule,
     ShipmentsModule,
