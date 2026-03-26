@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -54,6 +55,7 @@ export class ProductsController {
 
   @Get('personal')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('RESELLER')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List products currently in the reseller personal catalog' })
   @ApiOkResponse({ description: 'Paginated product list', type: ProductListResponseDto })
@@ -72,10 +74,15 @@ export class ProductsController {
 
   @Post('personal/toggle')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('RESELLER')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Toggle a product in the personal catalog' })
   @ApiOkResponse({ description: 'Toggled state' })
   async togglePersonalCatalog(@Body() dto: ToggleCatalogItemDto, @Req() req: any) {
+    const product = await this.productsService.findById(dto.productId);
+    if (product.status !== 'active') {
+      throw new BadRequestException('Only active (ERP-published) products can be selected');
+    }
     return this.usersService.togglePersonalCatalogItem(req.user.userId, dto.productId);
   }
 

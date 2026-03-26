@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsEmail,
   IsInt,
   IsMongoId,
   IsNotEmpty,
@@ -58,6 +59,15 @@ export class ShippingAddressDto {
   @IsString()
   @IsNotEmpty()
   country: string;
+
+  @ApiProperty({ example: '+1 555 123 4567' })
+  @IsString()
+  @IsNotEmpty()
+  clientPhone: string;
+
+  @ApiProperty({ example: 'client@example.com' })
+  @IsEmail()
+  clientEmail: string;
 }
 
 export class CreateOrderDto {

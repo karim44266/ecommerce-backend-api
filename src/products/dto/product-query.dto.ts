@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, IsIn, IsMongoId, Min, Max } from 'class-validator';
+import { IsOptional, IsString, IsInt, IsIn, IsMongoId, Min, Max, IsNumber, IsBoolean } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
 export class ProductQueryDto {
@@ -23,6 +23,30 @@ export class ProductQueryDto {
   @IsString()
   @IsOptional()
   status?: string;
+
+  @ApiPropertyOptional({ example: 10, description: 'Minimum price filter' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  minPrice?: number;
+
+  @ApiPropertyOptional({ example: 500, description: 'Maximum price filter' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  maxPrice?: number;
+
+  @ApiPropertyOptional({ example: true, description: 'Only include products with stock > 0' })
+  @Transform(({ value }) => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') return value.toLowerCase() === 'true';
+    return value;
+  })
+  @IsBoolean()
+  @IsOptional()
+  inStock?: boolean;
 
   @ApiPropertyOptional({ example: 'createdAt', description: 'Sort field' })
   @IsString()

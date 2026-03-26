@@ -30,6 +30,12 @@ export class User {
   @Prop({ type: Date, default: null })
   mfaOtpExpiresAt: Date | null;
 
+  @Prop({ type: String, default: null })
+  refreshTokenHash: string | null;
+
+  @Prop({ type: Date, default: null })
+  refreshTokenExpiresAt: Date | null;
+
   @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }], default: [] })
   personalCatalog: mongoose.Types.ObjectId[];
 }
