@@ -10,16 +10,25 @@ export class ProductResponseDto {
   @ApiProperty({ example: 'WH-1000' })
   sku: string;
 
-  @ApiPropertyOptional({ example: 'Premium noise-cancelling wireless headphones' })
+  @ApiPropertyOptional({
+    example: 'Premium noise-cancelling wireless headphones',
+  })
   description: string;
 
   @ApiProperty({ example: 99.99 })
   price: number;
 
-  @ApiPropertyOptional({ example: 79.99, description: 'Price for resellers (80% of public price)' })
+  @ApiPropertyOptional({
+    example: 79.99,
+    description: 'Price for resellers (80% of public price)',
+  })
   resellerPrice?: number;
 
-  @ApiPropertyOptional({ example: true, description: 'Whether the product is currently selected in the reseller catalog' })
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'Whether the product is currently selected in the reseller catalog',
+  })
   inPersonalCatalog?: boolean;
 
   @ApiPropertyOptional({ example: 'https://example.com/headphones.jpg' })

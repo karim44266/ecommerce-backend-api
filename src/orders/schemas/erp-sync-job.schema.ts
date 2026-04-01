@@ -4,11 +4,20 @@ import { applyCommonSchemaOptions } from '../../common/mongoose/schema-transform
 
 export type ErpSyncJobDocument = HydratedDocument<ErpSyncJob>;
 
-export type ErpSyncJobStatus = 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED';
+export type ErpSyncJobStatus =
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'SUCCEEDED'
+  | 'FAILED';
 
 @Schema({ timestamps: true, collection: 'erp_sync_jobs' })
 export class ErpSyncJob {
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true, index: true })
+  @Prop({
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Order',
+    required: true,
+    index: true,
+  })
   orderId: mongoose.Types.ObjectId;
 
   @Prop({ type: String, default: 'PENDING', index: true })

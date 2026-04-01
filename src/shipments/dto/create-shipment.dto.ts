@@ -7,7 +7,9 @@ export class CreateShipmentDto {
   @IsNotEmpty()
   orderId: string;
 
-  @ApiProperty({ description: 'Staff user MongoDB ObjectId to assign the shipment to' })
+  @ApiProperty({
+    description: 'Staff user MongoDB ObjectId to assign the shipment to',
+  })
   @IsMongoId()
   @IsNotEmpty()
   staffUserId: string;

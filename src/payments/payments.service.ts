@@ -66,11 +66,7 @@ export class PaymentsService {
    * Confirm / process a payment (mock — always succeeds unless card starts with 0000).
    * Updates order status to PAID on success.
    */
-  async confirmPayment(
-    paymentId: string,
-    userId: string,
-    cardNumber?: string,
-  ) {
+  async confirmPayment(paymentId: string, userId: string, cardNumber?: string) {
     const payment = await this.paymentModel.findById(paymentId);
 
     if (!payment) {
@@ -92,7 +88,9 @@ export class PaymentsService {
       cardNumber && cardNumber.replace(/\s/g, '').startsWith('0000');
 
     if (simulateFailure) {
-      await this.paymentModel.findByIdAndUpdate(paymentId, { status: 'FAILED' });
+      await this.paymentModel.findByIdAndUpdate(paymentId, {
+        status: 'FAILED',
+      });
 
       return {
         id: payment.id,
@@ -165,12 +163,16 @@ export class PaymentsService {
   }
 
   private formatPayment(payment: PaymentDocument | Record<string, any>) {
-    const plain = typeof (payment as PaymentDocument).toJSON === 'function'
-      ? ((payment as PaymentDocument).toJSON() as Record<string, any>)
-      : (payment as Record<string, any>);
+    const plain =
+      typeof (payment as PaymentDocument).toJSON === 'function'
+        ? ((payment as PaymentDocument).toJSON() as Record<string, any>)
+        : (payment as Record<string, any>);
     return {
       id: plain.id,
-      orderId: typeof plain.orderId === 'object' ? plain.orderId.id ?? String(plain.orderId._id) : String(plain.orderId),
+      orderId:
+        typeof plain.orderId === 'object'
+          ? (plain.orderId.id ?? String(plain.orderId._id))
+          : String(plain.orderId),
       amount: plain.amount / 100,
       amountCents: plain.amount,
       status: plain.status,

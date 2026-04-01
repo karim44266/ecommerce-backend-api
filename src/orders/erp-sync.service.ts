@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Order, OrderDocument } from './schemas/order.schema';
@@ -10,8 +15,14 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
 
   private workerTimer: NodeJS.Timeout | null = null;
 
-  private readonly maxRetries = Math.max(1, Number(process.env.ERP_SYNC_MAX_RETRIES ?? 3));
-  private readonly retryDelayMs = Math.max(1000, Number(process.env.ERP_SYNC_RETRY_DELAY_MS ?? 5000));
+  private readonly maxRetries = Math.max(
+    1,
+    Number(process.env.ERP_SYNC_MAX_RETRIES ?? 3),
+  );
+  private readonly retryDelayMs = Math.max(
+    1000,
+    Number(process.env.ERP_SYNC_RETRY_DELAY_MS ?? 5000),
+  );
   private readonly maxRetryDelayMs = Math.max(
     this.retryDelayMs,
     Number(process.env.ERP_SYNC_MAX_RETRY_DELAY_MS ?? 60000),
@@ -20,13 +31,21 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     500,
     Number(process.env.ERP_SYNC_PROCESS_INTERVAL_MS ?? 3000),
   );
-  private readonly workerBatchSize = Math.max(1, Number(process.env.ERP_SYNC_BATCH_SIZE ?? 5));
+  private readonly workerBatchSize = Math.max(
+    1,
+    Number(process.env.ERP_SYNC_BATCH_SIZE ?? 5),
+  );
 
-  private readonly erpConnector =
-    (process.env.ERP_SYNC_CONNECTOR ?? (process.env.ERP_ORDER_ENDPOINT ? 'http' : 'mock')).toLowerCase();
+  private readonly erpConnector = (
+    process.env.ERP_SYNC_CONNECTOR ??
+    (process.env.ERP_ORDER_ENDPOINT ? 'http' : 'mock')
+  ).toLowerCase();
   private readonly erpOrderEndpoint = process.env.ERP_ORDER_ENDPOINT ?? '';
   private readonly erpApiKey = process.env.ERP_API_KEY ?? '';
-  private readonly erpHttpTimeoutMs = Math.max(1000, Number(process.env.ERP_HTTP_TIMEOUT_MS ?? 10000));
+  private readonly erpHttpTimeoutMs = Math.max(
+    1000,
+    Number(process.env.ERP_HTTP_TIMEOUT_MS ?? 10000),
+  );
 
   private readonly mockFailureRate = Math.min(
     1,
@@ -35,7 +54,8 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
-    @InjectModel(ErpSyncJob.name) private readonly erpSyncJobModel: Model<ErpSyncJobDocument>,
+    @InjectModel(ErpSyncJob.name)
+    private readonly erpSyncJobModel: Model<ErpSyncJobDocument>,
   ) {}
 
   onModuleInit() {
@@ -44,7 +64,9 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     }, this.workerIntervalMs);
 
     void this.processQueue();
-    this.logger.log(`[ERP] Durable sync worker started (connector=${this.erpConnector})`);
+    this.logger.log(
+      `[ERP] Durable sync worker started (connector=${this.erpConnector})`,
+    );
   }
 
   onModuleDestroy() {
@@ -76,7 +98,9 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (existingPending) {
-        this.logger.log(`[ERP] Existing sync job already queued for order ${orderId}`);
+        this.logger.log(
+          `[ERP] Existing sync job already queued for order ${orderId}`,
+        );
         return;
       }
     }
@@ -139,7 +163,9 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
           lastError: 'Order not found',
         },
       });
-      this.logger.warn(`[ERP] Sync job failed: order not found (${job.orderId})`);
+      this.logger.warn(
+        `[ERP] Sync job failed: order not found (${job.orderId})`,
+      );
       return;
     }
 
@@ -154,7 +180,10 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     });
 
     try {
-      const erpRef = await this.sendOrderToErp(order, order.erpReference ?? null);
+      const erpRef = await this.sendOrderToErp(
+        order,
+        order.erpReference ?? null,
+      );
 
       await this.orderModel.findByIdAndUpdate(order.id, {
         $set: {
@@ -174,9 +203,12 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      this.logger.log(`[ERP] Sync successful for order ${order.id}. ERP Ref: ${erpRef}`);
+      this.logger.log(
+        `[ERP] Sync successful for order ${order.id}. ERP Ref: ${erpRef}`,
+      );
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown ERP sync error';
+      const message =
+        error instanceof Error ? error.message : 'Unknown ERP sync error';
       const canRetry = attemptNumber < (job.maxAttempts ?? this.maxRetries);
 
       await this.orderModel.findByIdAndUpdate(order.id, {
@@ -225,7 +257,10 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     return Math.min(this.maxRetryDelayMs, base);
   }
 
-  private async sendOrderToErp(order: OrderDocument, existingReference: string | null): Promise<string> {
+  private async sendOrderToErp(
+    order: OrderDocument,
+    existingReference: string | null,
+  ): Promise<string> {
     if (this.erpConnector === 'http') {
       return this.httpPush(order, existingReference);
     }
@@ -233,9 +268,14 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     return this.mockPush(order.id, existingReference);
   }
 
-  private async httpPush(order: OrderDocument, existingReference: string | null): Promise<string> {
+  private async httpPush(
+    order: OrderDocument,
+    existingReference: string | null,
+  ): Promise<string> {
     if (!this.erpOrderEndpoint) {
-      throw new Error('ERP_ORDER_ENDPOINT is not configured for HTTP connector');
+      throw new Error(
+        'ERP_ORDER_ENDPOINT is not configured for HTTP connector',
+      );
     }
 
     const payload = {
@@ -255,7 +295,8 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
         unitPrice: Number(item.unitPrice) / 100,
       })),
       totalAmount: Number(order.totalAmount) / 100,
-      createdAt: (order as unknown as { createdAt?: Date }).createdAt ?? new Date(),
+      createdAt:
+        (order as unknown as { createdAt?: Date }).createdAt ?? new Date(),
     };
 
     const controller = new AbortController();
@@ -266,7 +307,9 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(this.erpApiKey ? { Authorization: `Bearer ${this.erpApiKey}` } : {}),
+          ...(this.erpApiKey
+            ? { Authorization: `Bearer ${this.erpApiKey}` }
+            : {}),
         },
         body: JSON.stringify(payload),
         signal: controller.signal,
@@ -286,7 +329,9 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
       if (!response.ok) {
         throw new Error(
           `ERP HTTP ${response.status}: ${
-            typeof parsed?.message === 'string' ? parsed.message : responseText || 'unknown error'
+            typeof parsed?.message === 'string'
+              ? parsed.message
+              : responseText || 'unknown error'
           }`,
         );
       }
@@ -303,7 +348,10 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async mockPush(orderId: string, existingReference: string | null): Promise<string> {
+  private async mockPush(
+    orderId: string,
+    existingReference: string | null,
+  ): Promise<string> {
     await new Promise((resolve) => setTimeout(resolve, 800));
 
     if (Math.random() < this.mockFailureRate) {

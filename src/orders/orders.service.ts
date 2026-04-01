@@ -11,7 +11,10 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderQueryDto } from './dto/order-query.dto';
-import { UpdateOrderStatusDto, STATUS_TRANSITIONS } from './dto/update-order-status.dto';
+import {
+  UpdateOrderStatusDto,
+  STATUS_TRANSITIONS,
+} from './dto/update-order-status.dto';
 import { ErpSyncService } from './erp-sync.service';
 import { UpdateTrackingDto } from './dto/update-tracking.dto';
 import { Order, OrderDocument } from './schemas/order.schema';
@@ -54,7 +57,9 @@ export class OrdersService {
 
     const productIds = dto.items.map((i) => i.productId);
 
-    const dbProducts = await this.productModel.find({ _id: { $in: productIds } });
+    const dbProducts = await this.productModel.find({
+      _id: { $in: productIds },
+    });
 
     const productMap = new Map(dbProducts.map((p) => [p.id, p]));
 
@@ -69,7 +74,9 @@ export class OrdersService {
         );
       }
       if (product.status !== 'active') {
-        throw new BadRequestException(`Product "${product.name}" is not available`);
+        throw new BadRequestException(
+          `Product "${product.name}" is not available`,
+        );
       }
       if (product.inventory < item.quantity) {
         throw new BadRequestException(
@@ -81,7 +88,9 @@ export class OrdersService {
     let totalCents = 0;
     const itemsWithPrice = dto.items.map((item) => {
       const product = productMap.get(item.productId)!;
-      const effectiveUnitPrice = isReseller ? product.price * 0.8 : product.price;
+      const effectiveUnitPrice = isReseller
+        ? product.price * 0.8
+        : product.price;
       const unitPriceCents = Math.round(effectiveUnitPrice * 100);
       totalCents += unitPriceCents * item.quantity;
       return {
@@ -178,7 +187,13 @@ export class OrdersService {
     if (query.to) {
       const toDate = new Date(query.to);
       toDate.setHours(23, 59, 59, 999);
-      conditions.push({ createdAt: { ...(conditions.find((condition) => 'createdAt' in condition)?.createdAt as object), $lte: toDate } });
+      conditions.push({
+        createdAt: {
+          ...(conditions.find((condition) => 'createdAt' in condition)
+            ?.createdAt as object),
+          $lte: toDate,
+        },
+      });
     }
 
     const totalAmountRange: Record<string, number> = {};
@@ -193,7 +208,11 @@ export class OrdersService {
     }
 
     const filter: FilterQuery<OrderDocument> =
-      conditions.length === 0 ? {} : conditions.length === 1 ? conditions[0] : { $and: conditions };
+      conditions.length === 0
+        ? {}
+        : conditions.length === 1
+          ? conditions[0]
+          : { $and: conditions };
 
     if (query.search) {
       const escaped = this.escapeRegex(query.search);
@@ -214,12 +233,16 @@ export class OrdersService {
         .select('_id');
 
       if (matchingUsers.length > 0) {
-        orConditions.push({ userId: { $in: matchingUsers.map((user) => user._id) } });
+        orConditions.push({
+          userId: { $in: matchingUsers.map((user) => user._id) },
+        });
       }
 
       if (orConditions.length > 0) {
         if ('$and' in filter) {
-          (filter.$and as FilterQuery<OrderDocument>[]).push({ $or: orConditions });
+          (filter.$and as FilterQuery<OrderDocument>[]).push({
+            $or: orConditions,
+          });
         } else if (Object.keys(filter).length > 0) {
           Object.assign(filter, { $and: [filter, { $or: orConditions }] });
         } else {
@@ -272,7 +295,9 @@ export class OrdersService {
     }
 
     const ownerId =
-      order.userId && typeof order.userId === 'object' && '_id' in (order.userId as object)
+      order.userId &&
+      typeof order.userId === 'object' &&
+      '_id' in (order.userId as object)
         ? String((order.userId as { _id: Types.ObjectId })._id)
         : String(order.userId);
 
@@ -307,8 +332,13 @@ export class OrdersService {
       );
     }
 
-    if (dto.status === 'CANCELLED' && (!dto.note || dto.note.trim().length === 0)) {
-      throw new BadRequestException('Cancellation reason is required before shipment');
+    if (
+      dto.status === 'CANCELLED' &&
+      (!dto.note || dto.note.trim().length === 0)
+    ) {
+      throw new BadRequestException(
+        'Cancellation reason is required before shipment',
+      );
     }
 
     const updated = await this.orderModel.findByIdAndUpdate(
@@ -318,7 +348,9 @@ export class OrdersService {
         $push: {
           statusHistory: {
             status: dto.status,
-            note: dto.note ?? `Status changed from ${currentStatus} to ${dto.status}`,
+            note:
+              dto.note ??
+              `Status changed from ${currentStatus} to ${dto.status}`,
             changedBy: adminUserId,
             createdAt: new Date(),
           },
@@ -355,17 +387,23 @@ export class OrdersService {
     }
 
     if (!['DRAFT', 'CONFIRMED'].includes(order.status)) {
-      throw new BadRequestException('Only DRAFT or CONFIRMED orders can be edited');
+      throw new BadRequestException(
+        'Only DRAFT or CONFIRMED orders can be edited',
+      );
     }
 
     const hasItems = Array.isArray(dto.items) && dto.items.length > 0;
     const hasAddress = !!dto.shippingAddress;
 
     if (!hasItems && !hasAddress) {
-      throw new BadRequestException('Provide at least items or shippingAddress to update');
+      throw new BadRequestException(
+        'Provide at least items or shippingAddress to update',
+      );
     }
 
-    const orderingUser = await this.userModel.findById(String(order.userId)).select('roles personalCatalog');
+    const orderingUser = await this.userModel
+      .findById(String(order.userId))
+      .select('roles personalCatalog');
     if (!orderingUser) {
       throw new NotFoundException('User not found');
     }
@@ -379,16 +417,31 @@ export class OrdersService {
     const currentQtyByProduct = new Map<string, number>();
     for (const item of currentItems) {
       const productId = String(item.productId);
-      currentQtyByProduct.set(productId, (currentQtyByProduct.get(productId) ?? 0) + item.quantity);
+      currentQtyByProduct.set(
+        productId,
+        (currentQtyByProduct.get(productId) ?? 0) + item.quantity,
+      );
     }
 
     const targetItems = hasItems
-      ? dto.items!.map((item) => ({ productId: item.productId, quantity: item.quantity }))
-      : currentItems.map((item) => ({ productId: String(item.productId), quantity: item.quantity }));
+      ? dto.items!.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+        }))
+      : currentItems.map((item) => ({
+          productId: String(item.productId),
+          quantity: item.quantity,
+        }));
 
-    const productIds = Array.from(new Set(targetItems.map((item) => item.productId)));
-    const dbProducts = await this.productModel.find({ _id: { $in: productIds } });
-    const productMap = new Map(dbProducts.map((product) => [product.id, product]));
+    const productIds = Array.from(
+      new Set(targetItems.map((item) => item.productId)),
+    );
+    const dbProducts = await this.productModel.find({
+      _id: { $in: productIds },
+    });
+    const productMap = new Map(
+      dbProducts.map((product) => [product.id, product]),
+    );
 
     for (const item of targetItems) {
       const product = productMap.get(item.productId);
@@ -396,16 +449,23 @@ export class OrdersService {
         throw new NotFoundException(`Product ${item.productId} not found`);
       }
       if (isReseller && !personalCatalogSet.has(item.productId)) {
-        throw new ForbiddenException(`Product "${product.name}" is not in your personal catalog`);
+        throw new ForbiddenException(
+          `Product "${product.name}" is not in your personal catalog`,
+        );
       }
       if (product.status !== 'active') {
-        throw new BadRequestException(`Product "${product.name}" is not available`);
+        throw new BadRequestException(
+          `Product "${product.name}" is not available`,
+        );
       }
     }
 
     const targetQtyByProduct = new Map<string, number>();
     for (const item of targetItems) {
-      targetQtyByProduct.set(item.productId, (targetQtyByProduct.get(item.productId) ?? 0) + item.quantity);
+      targetQtyByProduct.set(
+        item.productId,
+        (targetQtyByProduct.get(item.productId) ?? 0) + item.quantity,
+      );
     }
 
     const allProductIds = new Set<string>([
@@ -416,7 +476,9 @@ export class OrdersService {
     let totalCents = 0;
     const itemsWithPrice = targetItems.map((item) => {
       const product = productMap.get(item.productId)!;
-      const effectiveUnitPrice = isReseller ? product.price * 0.8 : product.price;
+      const effectiveUnitPrice = isReseller
+        ? product.price * 0.8
+        : product.price;
       const unitPriceCents = Math.round(effectiveUnitPrice * 100);
       totalCents += unitPriceCents * item.quantity;
       return {
@@ -503,7 +565,12 @@ export class OrdersService {
     }
   }
 
-  async cancelOrder(orderId: string, userId: string, isAdmin: boolean, reason: string) {
+  async cancelOrder(
+    orderId: string,
+    userId: string,
+    isAdmin: boolean,
+    reason: string,
+  ) {
     const order = await this.orderModel.findById(orderId);
 
     if (!order) {
@@ -515,11 +582,15 @@ export class OrdersService {
     }
 
     if (!reason || reason.trim().length === 0) {
-      throw new BadRequestException('Cancellation reason is required before shipment');
+      throw new BadRequestException(
+        'Cancellation reason is required before shipment',
+      );
     }
 
     if (!['DRAFT', 'CONFIRMED', 'IN_PREPARATION'].includes(order.status)) {
-      throw new BadRequestException('Only orders before delivery can be cancelled');
+      throw new BadRequestException(
+        'Only orders before delivery can be cancelled',
+      );
     }
 
     const session = await this.connection.startSession();
@@ -593,7 +664,9 @@ export class OrdersService {
         $push: {
           statusHistory: {
             status: order.status,
-            note: dto.note ?? `Tracking updated: ${dto.carrier} ${dto.trackingNumber}`,
+            note:
+              dto.note ??
+              `Tracking updated: ${dto.carrier} ${dto.trackingNumber}`,
             changedBy: adminUserId,
             createdAt: new Date(),
           },
@@ -625,7 +698,9 @@ export class OrdersService {
 
     const isAdmin = roles.includes('ADMIN');
     const ownerId =
-      order.userId && typeof order.userId === 'object' && '_id' in (order.userId as object)
+      order.userId &&
+      typeof order.userId === 'object' &&
+      '_id' in (order.userId as object)
         ? String((order.userId as { _id: Types.ObjectId })._id)
         : String(order.userId);
 
@@ -642,10 +717,12 @@ export class OrdersService {
   // ────────────────────────────────────────────────────────────────
 
   private formatOrder(order: OrderDocument | Record<string, unknown>) {
-    const plain = typeof (order as OrderDocument).toJSON === 'function'
-      ? ((order as OrderDocument).toJSON() as Record<string, any>)
-      : (order as Record<string, any>);
-    const customer = plain.userId && typeof plain.userId === 'object' ? plain.userId : null;
+    const plain =
+      typeof (order as OrderDocument).toJSON === 'function'
+        ? ((order as OrderDocument).toJSON() as Record<string, any>)
+        : (order as Record<string, any>);
+    const customer =
+      plain.userId && typeof plain.userId === 'object' ? plain.userId : null;
 
     return {
       id: plain.id,
@@ -663,25 +740,30 @@ export class OrdersService {
       customerEmail: customer?.email,
       items: (plain.items ?? []).map((item: Record<string, any>) => ({
         id: item.id ?? String(item._id),
-        productId: typeof item.productId === 'object' && item.productId !== null ? item.productId.id ?? String(item.productId._id) : String(item.productId),
+        productId:
+          typeof item.productId === 'object' && item.productId !== null
+            ? (item.productId.id ?? String(item.productId._id))
+            : String(item.productId),
         name: item.name,
         quantity: item.quantity,
         unitPrice: Number(item.unitPrice) / 100,
       })),
-      statusHistory: (plain.statusHistory ?? []).map((entry: Record<string, any>) => ({
-        id: entry.id ?? String(entry._id),
-        status: entry.status,
-        note: entry.note,
-        changedBy:
-          entry.changedBy && typeof entry.changedBy === 'object'
-            ? entry.changedBy.id ?? String(entry.changedBy._id)
-            : entry.changedBy ?? null,
-        changedByEmail:
-          entry.changedBy && typeof entry.changedBy === 'object'
-            ? entry.changedBy.email ?? null
-            : null,
-        createdAt: entry.createdAt,
-      })),
+      statusHistory: (plain.statusHistory ?? []).map(
+        (entry: Record<string, any>) => ({
+          id: entry.id ?? String(entry._id),
+          status: entry.status,
+          note: entry.note,
+          changedBy:
+            entry.changedBy && typeof entry.changedBy === 'object'
+              ? (entry.changedBy.id ?? String(entry.changedBy._id))
+              : (entry.changedBy ?? null),
+          changedByEmail:
+            entry.changedBy && typeof entry.changedBy === 'object'
+              ? (entry.changedBy.email ?? null)
+              : null,
+          createdAt: entry.createdAt,
+        }),
+      ),
       createdAt: plain.createdAt,
       updatedAt: plain.updatedAt,
     };

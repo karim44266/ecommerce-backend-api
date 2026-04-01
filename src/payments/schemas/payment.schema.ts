@@ -6,7 +6,13 @@ export type PaymentDocument = HydratedDocument<Payment>;
 
 @Schema({ timestamps: true, collection: 'payments' })
 export class Payment {
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true, unique: true, index: true })
+  @Prop({
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Order',
+    required: true,
+    unique: true,
+    index: true,
+  })
   orderId: mongoose.Types.ObjectId;
 
   @Prop({ required: true })

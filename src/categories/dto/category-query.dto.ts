@@ -3,7 +3,10 @@ import { IsOptional, IsString, IsInt, Min, Max } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
 export class CategoryQueryDto {
-  @ApiPropertyOptional({ example: 'elec', description: 'Search by category name' })
+  @ApiPropertyOptional({
+    example: 'elec',
+    description: 'Search by category name',
+  })
   @IsString()
   @IsOptional()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))

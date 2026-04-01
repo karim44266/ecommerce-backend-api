@@ -41,7 +41,12 @@ export class Product {
   @Prop({ default: 'active', index: true })
   status: string;
 
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Category', default: null, index: true })
+  @Prop({
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category',
+    default: null,
+    index: true,
+  })
   categoryId: mongoose.Types.ObjectId | null;
 
   @Prop({ type: InventoryInfoSchema, default: () => ({}) })

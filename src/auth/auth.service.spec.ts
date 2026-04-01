@@ -8,7 +8,16 @@ jest.mock('bcrypt', () => ({
   hash: jest.fn(),
 }));
 
-const createUser = (overrides: Partial<{ id: string; email: string; passwordHash: string; mfaEnabled: boolean; mfaOtpHash: string | null; mfaOtpExpiresAt: Date | null }> = {}) => ({
+const createUser = (
+  overrides: Partial<{
+    id: string;
+    email: string;
+    passwordHash: string;
+    mfaEnabled: boolean;
+    mfaOtpHash: string | null;
+    mfaOtpExpiresAt: Date | null;
+  }> = {},
+) => ({
   id: 'user-1',
   email: 'user@example.com',
   passwordHash: 'hashed-password',
@@ -63,10 +72,15 @@ describe('AuthService', () => {
   });
 
   it('returns accessToken when MFA is disabled', async () => {
-    usersService.findByEmail.mockResolvedValue(createUser({ mfaEnabled: false }));
+    usersService.findByEmail.mockResolvedValue(
+      createUser({ mfaEnabled: false }),
+    );
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
-    const result = await authService.login({ email: 'user@example.com', password: 'secret' });
+    const result = await authService.login({
+      email: 'user@example.com',
+      password: 'secret',
+    });
 
     expect(result).toEqual({ accessToken: 'jwt-token' });
     expect(jwtService.signAsync).toHaveBeenCalledWith(
@@ -77,11 +91,16 @@ describe('AuthService', () => {
   });
 
   it('returns mfaRequired when MFA is enabled', async () => {
-    usersService.findByEmail.mockResolvedValue(createUser({ mfaEnabled: true }));
+    usersService.findByEmail.mockResolvedValue(
+      createUser({ mfaEnabled: true }),
+    );
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
     (bcrypt.hash as jest.Mock).mockResolvedValue('otp-hash');
 
-    const result = await authService.login({ email: 'user@example.com', password: 'secret' });
+    const result = await authService.login({
+      email: 'user@example.com',
+      password: 'secret',
+    });
 
     expect(result).toEqual({ mfaRequired: true });
     expect(usersService.setMfaOtp).toHaveBeenCalledWith(
@@ -89,7 +108,10 @@ describe('AuthService', () => {
       'otp-hash',
       expect.any(Date),
     );
-    expect(mailerService.sendMfaOtp).toHaveBeenCalledWith('user@example.com', expect.any(String));
+    expect(mailerService.sendMfaOtp).toHaveBeenCalledWith(
+      'user@example.com',
+      expect.any(String),
+    );
   });
 
   it('verifies MFA OTP and clears OTP fields', async () => {
@@ -102,7 +124,10 @@ describe('AuthService', () => {
     );
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
-    const result = await authService.verifyMfa({ email: 'user@example.com', otp: '123456' });
+    const result = await authService.verifyMfa({
+      email: 'user@example.com',
+      otp: '123456',
+    });
 
     expect(result).toEqual({ accessToken: 'jwt-token' });
     expect(jwtService.signAsync).toHaveBeenCalledWith(
@@ -117,7 +142,10 @@ describe('AuthService', () => {
     usersService.getUserRoles.mockResolvedValue(['CUSTOMER']);
     (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
 
-    await authService.register({ email: 'new@example.com', password: 'secret' });
+    await authService.register({
+      email: 'new@example.com',
+      password: 'secret',
+    });
 
     expect(usersService.ensureDefaultRole).toHaveBeenCalledWith('user-2');
     expect(jwtService.signAsync).toHaveBeenCalledWith(
@@ -134,9 +162,9 @@ describe('AuthService', () => {
       }),
     );
 
-    await expect(authService.verifyMfa({ email: 'user@example.com', otp: '123456' })).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(
+      authService.verifyMfa({ email: 'user@example.com', otp: '123456' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(usersService.clearMfaOtp).toHaveBeenCalledWith('user@example.com');
   });
 
@@ -150,13 +178,15 @@ describe('AuthService', () => {
     );
     (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
-    await expect(authService.verifyMfa({ email: 'user@example.com', otp: '000000' })).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(
+      authService.verifyMfa({ email: 'user@example.com', otp: '000000' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('enables MFA for authenticated user', async () => {
-    usersService.findById.mockResolvedValue(createUser({ id: 'user-1', mfaEnabled: false }));
+    usersService.findById.mockResolvedValue(
+      createUser({ id: 'user-1', mfaEnabled: false }),
+    );
 
     const result = await authService.toggleMfa('user-1', { enabled: true });
 
@@ -165,7 +195,9 @@ describe('AuthService', () => {
   });
 
   it('disables MFA for authenticated user', async () => {
-    usersService.findById.mockResolvedValue(createUser({ id: 'user-1', mfaEnabled: true }));
+    usersService.findById.mockResolvedValue(
+      createUser({ id: 'user-1', mfaEnabled: true }),
+    );
 
     const result = await authService.toggleMfa('user-1', { enabled: false });
 
@@ -176,8 +208,8 @@ describe('AuthService', () => {
   it('throws NotFoundException when toggling MFA for non-existent user', async () => {
     usersService.findById.mockResolvedValue(null);
 
-    await expect(authService.toggleMfa('non-existent', { enabled: true })).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      authService.toggleMfa('non-existent', { enabled: true }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

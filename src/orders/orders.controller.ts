@@ -63,7 +63,9 @@ export class OrdersController {
   // ── Detail ──────────────────────────────────────────────────────
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get order detail with items, tracking & status history' })
+  @ApiOperation({
+    summary: 'Get order detail with items, tracking & status history',
+  })
   @ApiOkResponse({ description: 'Order detail' })
   @ApiNotFoundResponse({ description: 'Order not found' })
   @ApiForbiddenResponse({ description: 'Access denied' })
@@ -73,9 +75,13 @@ export class OrdersController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Edit order (owner or admin, only DRAFT/CONFIRMED)' })
+  @ApiOperation({
+    summary: 'Edit order (owner or admin, only DRAFT/CONFIRMED)',
+  })
   @ApiOkResponse({ description: 'Updated order' })
-  @ApiBadRequestResponse({ description: 'Order not editable in current status' })
+  @ApiBadRequestResponse({
+    description: 'Order not editable in current status',
+  })
   @ApiForbiddenResponse({ description: 'Access denied' })
   @ApiNotFoundResponse({ description: 'Order not found' })
   updateOrder(
@@ -88,7 +94,9 @@ export class OrdersController {
   }
 
   @Post(':id/cancel')
-  @ApiOperation({ summary: 'Cancel order (owner or admin, reason required before shipment)' })
+  @ApiOperation({
+    summary: 'Cancel order (owner or admin, reason required before shipment)',
+  })
   @ApiOkResponse({ description: 'Cancelled order' })
   @ApiBadRequestResponse({ description: 'Invalid cancellation request' })
   @ApiForbiddenResponse({ description: 'Access denied' })
@@ -99,7 +107,12 @@ export class OrdersController {
     @Body() dto: CancelOrderDto,
   ) {
     const isAdmin = req.user.roles.includes('ADMIN');
-    return this.ordersService.cancelOrder(id, req.user.userId, isAdmin, dto.reason);
+    return this.ordersService.cancelOrder(
+      id,
+      req.user.userId,
+      isAdmin,
+      dto.reason,
+    );
   }
 
   // ── Update Status (ADMIN) ──────────────────────────────────────
@@ -107,7 +120,9 @@ export class OrdersController {
   @Patch(':id/status')
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Update order status (ADMIN only, validates transitions)' })
+  @ApiOperation({
+    summary: 'Update order status (ADMIN only, validates transitions)',
+  })
   @ApiOkResponse({ description: 'Updated order' })
   @ApiBadRequestResponse({ description: 'Invalid status transition' })
   @ApiNotFoundResponse({ description: 'Order not found' })
@@ -142,10 +157,7 @@ export class OrdersController {
   @ApiOkResponse({ description: 'Status change history with actor info' })
   @ApiNotFoundResponse({ description: 'Order not found' })
   @ApiForbiddenResponse({ description: 'Not your order' })
-  getStatusHistory(
-    @Req() req: { user: JwtUser },
-    @Param('id') id: string,
-  ) {
+  getStatusHistory(@Req() req: { user: JwtUser }, @Param('id') id: string) {
     return this.ordersService.getStatusHistory(
       id,
       req.user.userId,

@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBearerAuth,
@@ -22,6 +31,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Authenticate with email and password' })
   @ApiOkResponse({ description: 'Returns access token or MFA challenge' })
   @ApiUnauthorizedResponse({ description: 'Invalid credentials' })
@@ -43,7 +53,12 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current authenticated user info' })
   @ApiOkResponse({ description: 'Returns user id, email, and roles' })
   @ApiUnauthorizedResponse({ description: 'Not authenticated' })
-  me(@Req() request: { user: { userId: string; email: string; roles: string[] } }) {
+  me(
+    @Req()
+    request: {
+      user: { userId: string; email: string; roles: string[] };
+    },
+  ) {
     return request.user;
   }
 

@@ -6,7 +6,13 @@ export type UserDocument = HydratedDocument<User>;
 
 @Schema({ timestamps: true, collection: 'users' })
 export class User {
-  @Prop({ required: true, unique: true, index: true, trim: true, lowercase: true })
+  @Prop({
+    required: true,
+    unique: true,
+    index: true,
+    trim: true,
+    lowercase: true,
+  })
   email: string;
 
   @Prop({ default: '' })
@@ -36,7 +42,10 @@ export class User {
   @Prop({ type: Date, default: null })
   refreshTokenExpiresAt: Date | null;
 
-  @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }], default: [] })
+  @Prop({
+    type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
+    default: [],
+  })
   personalCatalog: mongoose.Types.ObjectId[];
 }
 

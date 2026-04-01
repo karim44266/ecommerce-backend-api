@@ -11,7 +11,15 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiBearerAuth, ApiCreatedResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags, ApiConflictResponse } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiConflictResponse,
+} from '@nestjs/swagger';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -83,7 +91,11 @@ export class UsersController {
   @ApiConflictResponse({ description: 'Email already exists' })
   async create(@Body() dto: CreateUserDto) {
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const user = await this.usersService.createUser(dto.email, passwordHash, dto.role || 'CUSTOMER');
+    const user = await this.usersService.createUser(
+      dto.email,
+      passwordHash,
+      dto.role || 'CUSTOMER',
+    );
     return {
       id: user.id,
       email: user.email,
@@ -106,10 +118,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Update user role (admin only)' })
   @ApiOkResponse({ description: 'Updated user' })
   @ApiNotFoundResponse({ description: 'User not found' })
-  updateRole(
-    @Param('id') id: string,
-    @Body() dto: UpdateRoleDto,
-  ) {
+  updateRole(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
     return this.usersService.updateRole(id, dto.role);
   }
 
@@ -118,10 +127,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Block / unblock user (admin only)' })
   @ApiOkResponse({ description: 'Updated user' })
   @ApiNotFoundResponse({ description: 'User not found' })
-  updateStatus(
-    @Param('id') id: string,
-    @Body() dto: UpdateStatusDto,
-  ) {
+  updateStatus(@Param('id') id: string, @Body() dto: UpdateStatusDto) {
     return this.usersService.updateStatus(id, dto.status);
   }
 }

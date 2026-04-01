@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException, UnauthorizedException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
@@ -7,10 +13,18 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private readonly userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+  ) {}
 
-  async createUser(email: string, passwordHash: string, role: string = 'CUSTOMER'): Promise<UserDocument> {
-    const existing = await this.userModel.findOne({ email: email.toLowerCase() });
+  async createUser(
+    email: string,
+    passwordHash: string,
+    role: string = 'CUSTOMER',
+  ): Promise<UserDocument> {
+    const existing = await this.userModel.findOne({
+      email: email.toLowerCase(),
+    });
     if (existing) {
       throw new ConflictException('Email already exists');
     }
@@ -30,12 +44,22 @@ export class UsersService {
   }
 
   /** Strip sensitive fields before returning to client. */
-  private sanitize(user: UserDocument | (Record<string, unknown> & { roles?: string[] })) {
-    const plain = typeof (user as UserDocument).toJSON === 'function'
-      ? ((user as UserDocument).toJSON() as Record<string, unknown> & { roles?: string[] })
-      : user;
+  private sanitize(
+    user: UserDocument | (Record<string, unknown> & { roles?: string[] }),
+  ) {
+    const plain =
+      typeof (user as UserDocument).toJSON === 'function'
+        ? ((user as UserDocument).toJSON() as Record<string, unknown> & {
+            roles?: string[];
+          })
+        : user;
 
-    const { passwordHash: _pw, mfaOtpHash: _otp, mfaOtpExpiresAt: _exp, ...safe } = plain;
+    const {
+      passwordHash: _pw,
+      mfaOtpHash: _otp,
+      mfaOtpExpiresAt: _exp,
+      ...safe
+    } = plain;
 
     return {
       ...safe,
@@ -51,7 +75,9 @@ export class UsersService {
     const filter = query?.search
       ? {
           $or: [
-            { email: { $regex: this.escapeRegex(query.search), $options: 'i' } },
+            {
+              email: { $regex: this.escapeRegex(query.search), $options: 'i' },
+            },
             { name: { $regex: this.escapeRegex(query.search), $options: 'i' } },
           ],
         }
@@ -59,7 +85,11 @@ export class UsersService {
 
     const [total, rows] = await Promise.all([
       this.userModel.countDocuments(filter),
-      this.userModel.find(filter).sort({ createdAt: 1 }).skip(offset).limit(limit),
+      this.userModel
+        .find(filter)
+        .sort({ createdAt: 1 })
+        .skip(offset)
+        .limit(limit),
     ]);
 
     return {
@@ -92,7 +122,11 @@ export class UsersService {
   }
 
   async updateStatus(id: string, status: string) {
-    const updated = await this.userModel.findByIdAndUpdate(id, { status }, { new: true });
+    const updated = await this.userModel.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true },
+    );
     if (!updated) {
       throw new NotFoundException('User not found');
     }
@@ -106,7 +140,9 @@ export class UsersService {
       payload.name = dto.name.trim();
     }
 
-    const updated = await this.userModel.findByIdAndUpdate(userId, payload, { new: true });
+    const updated = await this.userModel.findByIdAndUpdate(userId, payload, {
+      new: true,
+    });
     if (!updated) {
       throw new NotFoundException('User not found');
     }
@@ -114,7 +150,11 @@ export class UsersService {
     return this.sanitize(updated);
   }
 
-  async changeOwnPassword(userId: string, currentPassword: string, newPassword: string) {
+  async changeOwnPassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
     const user = await this.userModel.findById(userId).select('+passwordHash');
     if (!user) {
       throw new NotFoundException('User not found');
@@ -126,7 +166,9 @@ export class UsersService {
     }
 
     if (currentPassword === newPassword) {
-      throw new BadRequestException('New password must be different from current password');
+      throw new BadRequestException(
+        'New password must be different from current password',
+      );
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
@@ -142,7 +184,9 @@ export class UsersService {
     }
 
     const personalCatalog = user.personalCatalog || [];
-    const index = personalCatalog.findIndex((id) => id.toString() === productId);
+    const index = personalCatalog.findIndex(
+      (id) => id.toString() === productId,
+    );
 
     let added = false;
     if (index > -1) {
@@ -157,7 +201,9 @@ export class UsersService {
   }
 
   async getPersonalCatalog(userId: string): Promise<string[]> {
-    const user = await this.userModel.findById(userId).select('personalCatalog');
+    const user = await this.userModel
+      .findById(userId)
+      .select('personalCatalog');
     if (!user) {
       throw new NotFoundException('User not found');
     }

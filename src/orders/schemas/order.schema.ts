@@ -6,7 +6,11 @@ export type OrderDocument = HydratedDocument<Order>;
 
 @Schema()
 export class OrderItem {
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true })
+  @Prop({
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product',
+    required: true,
+  })
   productId: mongoose.Types.ObjectId;
 
   @Prop({ required: true })
@@ -48,12 +52,19 @@ export class ShippingAddress {
 }
 
 export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
-export const OrderStatusEntrySchema = SchemaFactory.createForClass(OrderStatusEntry);
-export const ShippingAddressSchema = SchemaFactory.createForClass(ShippingAddress);
+export const OrderStatusEntrySchema =
+  SchemaFactory.createForClass(OrderStatusEntry);
+export const ShippingAddressSchema =
+  SchemaFactory.createForClass(ShippingAddress);
 
 @Schema({ timestamps: true, collection: 'orders' })
 export class Order {
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   userId: mongoose.Types.ObjectId;
 
   @Prop({ default: 'DRAFT', index: true })

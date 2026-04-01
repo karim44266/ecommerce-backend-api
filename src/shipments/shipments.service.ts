@@ -33,15 +33,19 @@ export class ShipmentsService {
   //  Helpers
   // ──────────────────────────────────────────────────────────────
 
-  private formatShipment(
-    shipment: ShipmentDocument | Record<string, unknown>,
-  ) {
-    const plain = typeof (shipment as ShipmentDocument).toJSON === 'function'
-      ? ((shipment as ShipmentDocument).toJSON() as Record<string, any>)
-      : (shipment as Record<string, any>);
-    const staff = plain.staffUserId && typeof plain.staffUserId === 'object' ? plain.staffUserId : null;
-    const order = plain.orderId && typeof plain.orderId === 'object' ? plain.orderId : null;
-    const customer = order?.userId && typeof order.userId === 'object' ? order.userId : null;
+  private formatShipment(shipment: ShipmentDocument | Record<string, unknown>) {
+    const plain =
+      typeof (shipment as ShipmentDocument).toJSON === 'function'
+        ? ((shipment as ShipmentDocument).toJSON() as Record<string, any>)
+        : (shipment as Record<string, any>);
+    const staff =
+      plain.staffUserId && typeof plain.staffUserId === 'object'
+        ? plain.staffUserId
+        : null;
+    const order =
+      plain.orderId && typeof plain.orderId === 'object' ? plain.orderId : null;
+    const customer =
+      order?.userId && typeof order.userId === 'object' ? order.userId : null;
 
     return {
       id: plain.id,
@@ -78,13 +82,17 @@ export class ShipmentsService {
       );
     }
 
-    const existing = await this.shipmentModel.findOne({ orderId: dto.orderId }).select('_id');
+    const existing = await this.shipmentModel
+      .findOne({ orderId: dto.orderId })
+      .select('_id');
 
     if (existing) {
       throw new BadRequestException('A shipment already exists for this order');
     }
 
-    const staffUser = await this.userModel.findById(dto.staffUserId).select('roles');
+    const staffUser = await this.userModel
+      .findById(dto.staffUserId)
+      .select('roles');
 
     if (!staffUser) {
       throw new NotFoundException('Staff user not found');
@@ -139,7 +147,11 @@ export class ShipmentsService {
       const populated = await this.shipmentModel
         .findById(createdShipmentId)
         .populate('staffUserId', 'email name')
-        .populate({ path: 'orderId', select: 'status shippingAddress userId', populate: { path: 'userId', select: 'email' } });
+        .populate({
+          path: 'orderId',
+          select: 'status shippingAddress userId',
+          populate: { path: 'userId', select: 'email' },
+        });
 
       if (!populated) {
         throw new NotFoundException('Shipment not found after creation');
@@ -158,7 +170,12 @@ export class ShipmentsService {
   async findAll(
     userId: string,
     isAdmin: boolean,
-    query?: { status?: string; staffId?: string; page?: number; limit?: number },
+    query?: {
+      status?: string;
+      staffId?: string;
+      page?: number;
+      limit?: number;
+    },
   ) {
     const page = query?.page ?? 1;
     const limit = query?.limit ?? 20;
@@ -182,7 +199,11 @@ export class ShipmentsService {
       this.shipmentModel
         .find(filter)
         .populate('staffUserId', 'email name')
-        .populate({ path: 'orderId', select: 'status shippingAddress userId', populate: { path: 'userId', select: 'email' } })
+        .populate({
+          path: 'orderId',
+          select: 'status shippingAddress userId',
+          populate: { path: 'userId', select: 'email' },
+        })
         .sort({ createdAt: -1 })
         .skip(offset)
         .limit(limit),
@@ -202,14 +223,20 @@ export class ShipmentsService {
     const shipment = await this.shipmentModel
       .findById(id)
       .populate('staffUserId', 'email name')
-      .populate({ path: 'orderId', select: 'status shippingAddress userId', populate: { path: 'userId', select: 'email' } });
+      .populate({
+        path: 'orderId',
+        select: 'status shippingAddress userId',
+        populate: { path: 'userId', select: 'email' },
+      });
 
     if (!shipment) {
       throw new NotFoundException('Shipment not found');
     }
 
     const shipmentStaffId =
-      shipment.staffUserId && typeof shipment.staffUserId === 'object' && '_id' in (shipment.staffUserId as object)
+      shipment.staffUserId &&
+      typeof shipment.staffUserId === 'object' &&
+      '_id' in (shipment.staffUserId as object)
         ? String((shipment.staffUserId as { _id: Types.ObjectId })._id)
         : String(shipment.staffUserId);
 
@@ -237,7 +264,9 @@ export class ShipmentsService {
       );
     }
 
-    const newStaff = await this.userModel.findById(dto.staffUserId).select('roles');
+    const newStaff = await this.userModel
+      .findById(dto.staffUserId)
+      .select('roles');
 
     if (!newStaff) {
       throw new NotFoundException('Staff user not found');
@@ -377,7 +406,9 @@ export class ShipmentsService {
       this.shipmentModel.find().select('orderId'),
     ]);
 
-    const assignedOrderIds = new Set(shipments.map((shipment) => String(shipment.orderId)));
+    const assignedOrderIds = new Set(
+      shipments.map((shipment) => String(shipment.orderId)),
+    );
 
     return orders
       .filter((order) => !assignedOrderIds.has(order.id))
@@ -388,7 +419,9 @@ export class ShipmentsService {
           status: plain.status,
           totalAmount: Number(plain.totalAmount) / 100,
           customerEmail:
-            plain.userId && typeof plain.userId === 'object' ? plain.userId.email ?? null : null,
+            plain.userId && typeof plain.userId === 'object'
+              ? (plain.userId.email ?? null)
+              : null,
           shippingAddress: plain.shippingAddress,
           createdAt: plain.createdAt,
         };

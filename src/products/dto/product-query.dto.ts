@@ -1,15 +1,31 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, IsIn, IsMongoId, Min, Max, IsNumber, IsBoolean } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsInt,
+  IsIn,
+  IsMongoId,
+  Min,
+  Max,
+  IsNumber,
+  IsBoolean,
+} from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
 export class ProductQueryDto {
-  @ApiPropertyOptional({ example: 'headphones', description: 'Search by product name' })
+  @ApiPropertyOptional({
+    example: 'headphones',
+    description: 'Search by product name',
+  })
   @IsString()
   @IsOptional()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   search?: string;
 
-  @ApiPropertyOptional({ example: 'Electronics', description: 'Filter by category name' })
+  @ApiPropertyOptional({
+    example: 'Electronics',
+    description: 'Filter by category name',
+  })
   @IsString()
   @IsOptional()
   category?: string;
@@ -38,7 +54,10 @@ export class ProductQueryDto {
   @IsOptional()
   maxPrice?: number;
 
-  @ApiPropertyOptional({ example: true, description: 'Only include products with stock > 0' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Only include products with stock > 0',
+  })
   @Transform(({ value }) => {
     if (typeof value === 'boolean') return value;
     if (typeof value === 'string') return value.toLowerCase() === 'true';

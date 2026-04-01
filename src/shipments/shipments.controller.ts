@@ -74,7 +74,10 @@ export class ShipmentsController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get orders eligible for shipment assignment (CONFIRMED/IN_PREPARATION without existing shipment)' })
+  @ApiOperation({
+    summary:
+      'Get orders eligible for shipment assignment (CONFIRMED/IN_PREPARATION without existing shipment)',
+  })
   @ApiOkResponse({ description: 'List of assignable orders' })
   getAssignableOrders() {
     return this.shipmentsService.getAssignableOrders();
@@ -98,11 +101,10 @@ export class ShipmentsController {
   @ApiOperation({ summary: 'Get shipment detail' })
   @ApiOkResponse({ description: 'Shipment detail' })
   @ApiNotFoundResponse({ description: 'Shipment not found' })
-  @ApiForbiddenResponse({ description: 'Access denied (staff can only view own)' })
-  findOne(
-    @Req() req: { user: JwtUser },
-    @Param('id') id: string,
-  ) {
+  @ApiForbiddenResponse({
+    description: 'Access denied (staff can only view own)',
+  })
+  findOne(@Req() req: { user: JwtUser }, @Param('id') id: string) {
     const isAdmin = req.user.roles.includes('ADMIN');
     return this.shipmentsService.findById(id, req.user.userId, isAdmin);
   }
@@ -121,7 +123,12 @@ export class ShipmentsController {
     @Body() dto: UpdateShipmentStatusDto,
   ) {
     const isAdmin = req.user.roles.includes('ADMIN');
-    return this.shipmentsService.updateStatus(id, dto, req.user.userId, isAdmin);
+    return this.shipmentsService.updateStatus(
+      id,
+      dto,
+      req.user.userId,
+      isAdmin,
+    );
   }
 
   // ─── Reassign Shipment (ADMIN) ─────────────────────────────
@@ -129,13 +136,12 @@ export class ShipmentsController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('ADMIN')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Reassign shipment to different staff (admin only)' })
+  @ApiOperation({
+    summary: 'Reassign shipment to different staff (admin only)',
+  })
   @ApiOkResponse({ description: 'Shipment reassigned' })
   @ApiNotFoundResponse({ description: 'Shipment not found' })
-  reassign(
-    @Param('id') id: string,
-    @Body() dto: AssignShipmentDto,
-  ) {
+  reassign(@Param('id') id: string, @Body() dto: AssignShipmentDto) {
     return this.shipmentsService.reassign(id, dto);
   }
 }

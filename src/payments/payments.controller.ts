@@ -59,10 +59,7 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Get payment by order ID' })
   @ApiOkResponse({ description: 'Payment details or null' })
   @ApiNotFoundResponse({ description: 'Order not found' })
-  getByOrder(
-    @Req() req: { user: JwtUser },
-    @Param('orderId') orderId: string,
-  ) {
+  getByOrder(@Req() req: { user: JwtUser }, @Param('orderId') orderId: string) {
     return this.paymentsService.getByOrderId(orderId, req.user.userId);
   }
 }

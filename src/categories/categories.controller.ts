@@ -23,7 +23,10 @@ import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { CategoriesService } from './categories.service';
 import { CategoryQueryDto } from './dto/category-query.dto';
-import { CategoryListResponseDto, CategoryResponseDto } from './dto/category-response.dto';
+import {
+  CategoryListResponseDto,
+  CategoryResponseDto,
+} from './dto/category-response.dto';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
@@ -33,8 +36,13 @@ export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List categories (paginated, with search & product count)' })
-  @ApiOkResponse({ description: 'Paginated category list', type: CategoryListResponseDto })
+  @ApiOperation({
+    summary: 'List categories (paginated, with search & product count)',
+  })
+  @ApiOkResponse({
+    description: 'Paginated category list',
+    type: CategoryListResponseDto,
+  })
   findAll(@Query() query: CategoryQueryDto) {
     return this.categoriesService.findAll(query);
   }
@@ -48,7 +56,10 @@ export class CategoriesController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get category by ID' })
-  @ApiOkResponse({ description: 'Category detail with product count', type: CategoryResponseDto })
+  @ApiOkResponse({
+    description: 'Category detail with product count',
+    type: CategoryResponseDto,
+  })
   @ApiNotFoundResponse({ description: 'Category not found' })
   findOne(@Param('id') id: string) {
     return this.categoriesService.findById(id);
@@ -72,10 +83,7 @@ export class CategoriesController {
   @ApiOperation({ summary: 'Update a category (admin only)' })
   @ApiOkResponse({ description: 'Updated category' })
   @ApiNotFoundResponse({ description: 'Category not found' })
-  update(
-    @Param('id') id: string,
-    @Body() dto: UpdateCategoryDto,
-  ) {
+  update(@Param('id') id: string, @Body() dto: UpdateCategoryDto) {
     return this.categoriesService.update(id, dto);
   }
 

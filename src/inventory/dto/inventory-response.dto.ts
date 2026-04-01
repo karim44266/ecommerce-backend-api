@@ -62,13 +62,19 @@ export class InventorySummaryDto {
   @ApiProperty({ example: 42, description: 'Total products with inventory' })
   total: number;
 
-  @ApiProperty({ example: 5, description: 'Products with quantity ≤ threshold but > 0' })
+  @ApiProperty({
+    example: 5,
+    description: 'Products with quantity ≤ threshold but > 0',
+  })
   low: number;
 
   @ApiProperty({ example: 2, description: 'Products with quantity ≤ 0' })
   out: number;
 
-  @ApiProperty({ example: 35, description: 'Products with quantity > threshold' })
+  @ApiProperty({
+    example: 35,
+    description: 'Products with quantity > threshold',
+  })
   inStock: number;
 }
 

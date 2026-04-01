@@ -12,7 +12,10 @@ import {
   StockFilter,
 } from './dto/inventory-query.dto';
 import { HistoryQueryDto } from './dto/inventory-query.dto';
-import { InventoryAdjustment, InventoryAdjustmentDocument } from './schemas/inventory-adjustment.schema';
+import {
+  InventoryAdjustment,
+  InventoryAdjustmentDocument,
+} from './schemas/inventory-adjustment.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 
 @Injectable()
@@ -30,10 +33,14 @@ export class InventoryService {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  private toResponse(product: ProductDocument | Record<string, unknown>, overrides?: { isLowStock?: boolean }) {
-    const plain = typeof (product as ProductDocument).toJSON === 'function'
-      ? ((product as ProductDocument).toJSON() as Record<string, any>)
-      : (product as Record<string, any>);
+  private toResponse(
+    product: ProductDocument | Record<string, unknown>,
+    overrides?: { isLowStock?: boolean },
+  ) {
+    const plain =
+      typeof (product as ProductDocument).toJSON === 'function'
+        ? ((product as ProductDocument).toJSON() as Record<string, any>)
+        : (product as Record<string, any>);
     const inventoryInfo = plain.inventoryInfo ?? {};
 
     return {
@@ -46,13 +53,16 @@ export class InventoryService {
       lowStockThreshold: inventoryInfo.lowStockThreshold ?? 10,
       isLowStock:
         overrides?.isLowStock ??
-        (inventoryInfo.quantity ?? plain.inventory ?? 0) <= (inventoryInfo.lowStockThreshold ?? 10),
+        (inventoryInfo.quantity ?? plain.inventory ?? 0) <=
+          (inventoryInfo.lowStockThreshold ?? 10),
       lastAdjustedAt: inventoryInfo.lastAdjustedAt ?? null,
       createdAt: plain.createdAt,
     };
   }
 
-  private buildStatusFilter(status: StockFilter): FilterQuery<ProductDocument> | undefined {
+  private buildStatusFilter(
+    status: StockFilter,
+  ): FilterQuery<ProductDocument> | undefined {
     switch (status) {
       case StockFilter.OUT:
         return { 'inventoryInfo.quantity': { $lte: 0 } };
@@ -61,14 +71,22 @@ export class InventoryService {
           $expr: {
             $and: [
               { $gte: ['$inventoryInfo.quantity', 1] },
-              { $lte: ['$inventoryInfo.quantity', '$inventoryInfo.lowStockThreshold'] },
+              {
+                $lte: [
+                  '$inventoryInfo.quantity',
+                  '$inventoryInfo.lowStockThreshold',
+                ],
+              },
             ],
           },
         };
       case StockFilter.IN_STOCK:
         return {
           $expr: {
-            $gt: ['$inventoryInfo.quantity', '$inventoryInfo.lowStockThreshold'],
+            $gt: [
+              '$inventoryInfo.quantity',
+              '$inventoryInfo.lowStockThreshold',
+            ],
           },
         };
       default:
@@ -76,7 +94,9 @@ export class InventoryService {
     }
   }
 
-  private buildFilter(query: InventoryQueryDto = {}): FilterQuery<ProductDocument> {
+  private buildFilter(
+    query: InventoryQueryDto = {},
+  ): FilterQuery<ProductDocument> {
     const conditions: FilterQuery<ProductDocument>[] = [];
 
     if (query.search) {
@@ -114,7 +134,11 @@ export class InventoryService {
     }
 
     const hasInventoryInfo = !!product.inventoryInfo;
-    if (hasInventoryInfo && product.inventory !== undefined && product.inventory !== null) {
+    if (
+      hasInventoryInfo &&
+      product.inventory !== undefined &&
+      product.inventory !== null
+    ) {
       return product;
     }
 
@@ -124,7 +148,10 @@ export class InventoryService {
         $set: {
           inventory: product.inventory ?? initialQuantity,
           inventoryInfo: {
-            quantity: product.inventoryInfo?.quantity ?? product.inventory ?? initialQuantity,
+            quantity:
+              product.inventoryInfo?.quantity ??
+              product.inventory ??
+              initialQuantity,
             lowStockThreshold: product.inventoryInfo?.lowStockThreshold ?? 10,
             lastAdjustedAt: product.inventoryInfo?.lastAdjustedAt ?? null,
           },
@@ -146,7 +173,12 @@ export class InventoryService {
                 {
                   $and: [
                     { $gt: ['$inventoryInfo.quantity', 0] },
-                    { $lte: ['$inventoryInfo.quantity', '$inventoryInfo.lowStockThreshold'] },
+                    {
+                      $lte: [
+                        '$inventoryInfo.quantity',
+                        '$inventoryInfo.lowStockThreshold',
+                      ],
+                    },
                   ],
                 },
                 1,
@@ -161,7 +193,16 @@ export class InventoryService {
           },
           inStock: {
             $sum: {
-              $cond: [{ $gt: ['$inventoryInfo.quantity', '$inventoryInfo.lowStockThreshold'] }, 1, 0],
+              $cond: [
+                {
+                  $gt: [
+                    '$inventoryInfo.quantity',
+                    '$inventoryInfo.lowStockThreshold',
+                  ],
+                },
+                1,
+                0,
+              ],
             },
           },
         },
@@ -183,11 +224,16 @@ export class InventoryService {
       [InventorySortBy.LAST_ADJUSTED]: 'inventoryInfo.lastAdjustedAt',
       [InventorySortBy.NAME]: 'name',
     };
-    const sortField = sortFieldMap[query.sortBy ?? InventorySortBy.NAME] ?? 'name';
+    const sortField =
+      sortFieldMap[query.sortBy ?? InventorySortBy.NAME] ?? 'name';
 
     const [count, rows] = await Promise.all([
       this.productModel.countDocuments(filter),
-      this.productModel.find(filter).sort({ [sortField]: sortDir }).skip(offset).limit(limit),
+      this.productModel
+        .find(filter)
+        .sort({ [sortField]: sortDir })
+        .skip(offset)
+        .limit(limit),
     ]);
 
     return {
@@ -205,7 +251,9 @@ export class InventoryService {
     const product = await this.productModel.findById(productId);
 
     if (!product) {
-      throw new NotFoundException('Inventory record not found for this product');
+      throw new NotFoundException(
+        'Inventory record not found for this product',
+      );
     }
 
     return this.toResponse(product);
@@ -224,7 +272,11 @@ export class InventoryService {
 
     const [count, rows] = await Promise.all([
       this.productModel.countDocuments(filter),
-      this.productModel.find(filter).sort({ 'inventoryInfo.quantity': 1 }).skip(offset).limit(limit),
+      this.productModel
+        .find(filter)
+        .sort({ 'inventoryInfo.quantity': 1 })
+        .skip(offset)
+        .limit(limit),
     ]);
 
     return {
@@ -246,7 +298,9 @@ export class InventoryService {
   ) {
     const existing = await this.productModel.findById(productId);
     if (!existing) {
-      throw new NotFoundException('Inventory record not found for this product');
+      throw new NotFoundException(
+        'Inventory record not found for this product',
+      );
     }
 
     const session = await this.connection.startSession();
@@ -257,7 +311,10 @@ export class InventoryService {
       await session.withTransaction(async () => {
         const filter: FilterQuery<ProductDocument> =
           adjustment < 0
-            ? { _id: productId, 'inventoryInfo.quantity': { $gte: Math.abs(adjustment) } }
+            ? {
+                _id: productId,
+                'inventoryInfo.quantity': { $gte: Math.abs(adjustment) },
+              }
             : { _id: productId };
 
         const updated = await this.productModel.findOneAndUpdate(
@@ -275,7 +332,9 @@ export class InventoryService {
         );
 
         if (!updated) {
-          throw new BadRequestException('Insufficient stock or product not found');
+          throw new BadRequestException(
+            'Insufficient stock or product not found',
+          );
         }
 
         const [historyEntry] = await this.adjustmentModel.create(
@@ -298,8 +357,11 @@ export class InventoryService {
         response = {
           ...this.toResponse(updated),
           adjustedBy:
-            populatedHistory && populatedHistory.adjustedBy && typeof populatedHistory.adjustedBy === 'object'
-              ? (populatedHistory.adjustedBy as { email?: string }).email ?? null
+            populatedHistory &&
+            populatedHistory.adjustedBy &&
+            typeof populatedHistory.adjustedBy === 'object'
+              ? ((populatedHistory.adjustedBy as { email?: string }).email ??
+                null)
               : null,
           adjustmentApplied: adjustment,
         };
@@ -319,7 +381,9 @@ export class InventoryService {
     );
 
     if (!updated) {
-      throw new NotFoundException('Inventory record not found for this product');
+      throw new NotFoundException(
+        'Inventory record not found for this product',
+      );
     }
 
     return this.findByProductId(productId);
@@ -332,7 +396,9 @@ export class InventoryService {
 
     const product = await this.productModel.findById(productId);
     if (!product) {
-      throw new NotFoundException('Inventory record not found for this product');
+      throw new NotFoundException(
+        'Inventory record not found for this product',
+      );
     }
 
     const [count, rows] = await Promise.all([
@@ -354,7 +420,7 @@ export class InventoryService {
           reason: plain.reason,
           adjustedBy:
             plain.adjustedBy && typeof plain.adjustedBy === 'object'
-              ? plain.adjustedBy.email ?? null
+              ? (plain.adjustedBy.email ?? null)
               : null,
           createdAt: plain.createdAt,
         };
@@ -388,7 +454,10 @@ export class InventoryService {
     }
 
     if (created === 0) {
-      return { created: 0, message: 'All products already have inventory records' };
+      return {
+        created: 0,
+        message: 'All products already have inventory records',
+      };
     }
 
     return {

@@ -44,16 +44,26 @@ export class InventoryController {
 
   @Get()
   @Roles('ADMIN', 'STAFF')
-  @ApiOperation({ summary: 'List inventory items (paginated, filterable, sortable)' })
-  @ApiOkResponse({ description: 'Paginated inventory list', type: PaginatedInventoryResponseDto })
+  @ApiOperation({
+    summary: 'List inventory items (paginated, filterable, sortable)',
+  })
+  @ApiOkResponse({
+    description: 'Paginated inventory list',
+    type: PaginatedInventoryResponseDto,
+  })
   findAll(@Query() query: InventoryQueryDto) {
     return this.inventoryService.findAll(query);
   }
 
   @Get('summary')
   @Roles('ADMIN', 'STAFF')
-  @ApiOperation({ summary: 'Get inventory summary counts (total, low, out, in-stock)' })
-  @ApiOkResponse({ description: 'Inventory summary', type: InventorySummaryDto })
+  @ApiOperation({
+    summary: 'Get inventory summary counts (total, low, out, in-stock)',
+  })
+  @ApiOkResponse({
+    description: 'Inventory summary',
+    type: InventorySummaryDto,
+  })
   getSummary() {
     return this.inventoryService.getSummary();
   }
@@ -61,7 +71,10 @@ export class InventoryController {
   @Get('low-stock')
   @Roles('ADMIN', 'STAFF')
   @ApiOperation({ summary: 'List products with low stock (paginated)' })
-  @ApiOkResponse({ description: 'Paginated low-stock inventory list', type: PaginatedInventoryResponseDto })
+  @ApiOkResponse({
+    description: 'Paginated low-stock inventory list',
+    type: PaginatedInventoryResponseDto,
+  })
   findLowStock(@Query() query: InventoryQueryDto) {
     return this.inventoryService.findLowStock(query);
   }
@@ -69,7 +82,9 @@ export class InventoryController {
   @Post('backfill')
   @HttpCode(200)
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Create inventory records for products missing one' })
+  @ApiOperation({
+    summary: 'Create inventory records for products missing one',
+  })
   @ApiOkResponse({ description: 'Backfill result', type: BackfillResponseDto })
   backfill() {
     return this.inventoryService.backfill();
@@ -78,7 +93,10 @@ export class InventoryController {
   @Get(':productId')
   @Roles('ADMIN', 'STAFF')
   @ApiOperation({ summary: 'Get inventory for a specific product' })
-  @ApiOkResponse({ description: 'Inventory record', type: InventoryResponseDto })
+  @ApiOkResponse({
+    description: 'Inventory record',
+    type: InventoryResponseDto,
+  })
   @ApiNotFoundResponse({ description: 'Inventory not found' })
   findByProduct(@Param('productId') productId: string) {
     return this.inventoryService.findByProductId(productId);
@@ -87,7 +105,10 @@ export class InventoryController {
   @Get(':productId/history')
   @Roles('ADMIN', 'STAFF')
   @ApiOperation({ summary: 'Get paginated adjustment history for a product' })
-  @ApiOkResponse({ description: 'Paginated adjustment history', type: PaginatedHistoryResponseDto })
+  @ApiOkResponse({
+    description: 'Paginated adjustment history',
+    type: PaginatedHistoryResponseDto,
+  })
   @ApiNotFoundResponse({ description: 'Inventory not found' })
   getHistory(
     @Param('productId') productId: string,
@@ -98,8 +119,13 @@ export class InventoryController {
 
   @Post(':productId/adjust')
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Adjust stock for a product (admin only, race-safe)' })
-  @ApiCreatedResponse({ description: 'Updated inventory record with adjustment info', type: AdjustResultDto })
+  @ApiOperation({
+    summary: 'Adjust stock for a product (admin only, race-safe)',
+  })
+  @ApiCreatedResponse({
+    description: 'Updated inventory record with adjustment info',
+    type: AdjustResultDto,
+  })
   @ApiBadRequestResponse({ description: 'Stock cannot go below 0' })
   @ApiNotFoundResponse({ description: 'Inventory not found' })
   adjust(
@@ -118,7 +144,10 @@ export class InventoryController {
   @Patch(':productId/threshold')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Update low-stock threshold for a product' })
-  @ApiOkResponse({ description: 'Updated inventory record', type: InventoryResponseDto })
+  @ApiOkResponse({
+    description: 'Updated inventory record',
+    type: InventoryResponseDto,
+  })
   @ApiNotFoundResponse({ description: 'Inventory not found' })
   updateThreshold(
     @Param('productId') productId: string,

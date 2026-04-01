@@ -3,7 +3,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AdjustStockDto {
   @ApiProperty({
-    description: 'Positive = add stock, negative = subtract stock. Cannot be 0.',
+    description:
+      'Positive = add stock, negative = subtract stock. Cannot be 0.',
     example: 25,
   })
   @IsInt()

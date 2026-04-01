@@ -6,10 +6,21 @@ export type ShipmentDocument = HydratedDocument<Shipment>;
 
 @Schema({ timestamps: true, collection: 'shipments' })
 export class Shipment {
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true, unique: true, index: true })
+  @Prop({
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Order',
+    required: true,
+    unique: true,
+    index: true,
+  })
   orderId: mongoose.Types.ObjectId;
 
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   staffUserId: mongoose.Types.ObjectId;
 
   @Prop({ default: 'ASSIGNED', index: true })

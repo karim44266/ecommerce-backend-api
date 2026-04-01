@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { InventoryController } from './inventory.controller';
-import { InventoryAdjustment, InventoryAdjustmentSchema } from './schemas/inventory-adjustment.schema';
+import {
+  InventoryAdjustment,
+  InventoryAdjustmentSchema,
+} from './schemas/inventory-adjustment.schema';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { InventoryService } from './inventory.service';
 

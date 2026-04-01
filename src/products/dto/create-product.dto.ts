@@ -24,12 +24,17 @@ export class CreateProductDto {
   @MaxLength(100)
   sku: string;
 
-  @ApiPropertyOptional({ example: 'Premium noise-cancelling wireless headphones' })
+  @ApiPropertyOptional({
+    example: 'Premium noise-cancelling wireless headphones',
+  })
   @IsString()
   @IsOptional()
   description?: string;
 
-  @ApiProperty({ example: 99.99, description: 'Price in dollars (max 2 decimal places)' })
+  @ApiProperty({
+    example: 99.99,
+    description: 'Price in dollars (max 2 decimal places)',
+  })
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Type(() => Number)
@@ -47,7 +52,10 @@ export class CreateProductDto {
   @Type(() => Number)
   inventory?: number;
 
-  @ApiPropertyOptional({ example: 'active', enum: ['active', 'draft', 'archived'] })
+  @ApiPropertyOptional({
+    example: 'active',
+    enum: ['active', 'draft', 'archived'],
+  })
   @IsString()
   @IsOptional()
   status?: string;

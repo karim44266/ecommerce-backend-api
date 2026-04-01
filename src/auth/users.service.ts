@@ -5,7 +5,9 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private readonly userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+  ) {}
 
   async findByEmail(email: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ email: email.toLowerCase() });
@@ -34,7 +36,11 @@ export class UsersService {
     await this.assignRoleToUser(userId, 'CUSTOMER');
   }
 
-  async setMfaOtp(email: string, otpHash: string, otpExpiresAt: Date): Promise<void> {
+  async setMfaOtp(
+    email: string,
+    otpHash: string,
+    otpExpiresAt: Date,
+  ): Promise<void> {
     await this.userModel.findOneAndUpdate(
       { email: email.toLowerCase() },
       { mfaOtpHash: otpHash, mfaOtpExpiresAt: otpExpiresAt },

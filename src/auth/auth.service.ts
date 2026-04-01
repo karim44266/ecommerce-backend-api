@@ -1,4 +1,10 @@
-import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomInt } from 'crypto';
@@ -19,7 +25,9 @@ export class AuthService {
     private readonly mailerService: MailerService,
   ) {}
 
-  async login(dto: LoginDto): Promise<{ accessToken?: string; mfaRequired?: boolean }> {
+  async login(
+    dto: LoginDto,
+  ): Promise<{ accessToken?: string; mfaRequired?: boolean }> {
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -28,6 +36,13 @@ export class AuthService {
     const passwordValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordValid) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (user.status === 'blocked') {
+      throw new ForbiddenException({
+        blocked: true,
+        message: 'Your account has been blocked. Please contact support.',
+      });
     }
 
     if (user.mfaEnabled) {
@@ -63,7 +78,12 @@ export class AuthService {
 
   async verifyMfa(dto: MfaVerifyDto): Promise<{ accessToken: string }> {
     const user = await this.usersService.findByEmail(dto.email);
-    if (!user || !user.mfaEnabled || !user.mfaOtpHash || !user.mfaOtpExpiresAt) {
+    if (
+      !user ||
+      !user.mfaEnabled ||
+      !user.mfaOtpHash ||
+      !user.mfaOtpExpiresAt
+    ) {
       throw new UnauthorizedException('Invalid or expired OTP');
     }
 
@@ -84,11 +104,18 @@ export class AuthService {
     return { accessToken };
   }
 
-  private async signToken(userId: string, email: string, roles: string[]): Promise<string> {
+  private async signToken(
+    userId: string,
+    email: string,
+    roles: string[],
+  ): Promise<string> {
     return this.jwtService.signAsync({ sub: userId, email, roles });
   }
 
-  async toggleMfa(userId: string, dto: MfaToggleDto): Promise<{ mfaEnabled: boolean }> {
+  async toggleMfa(
+    userId: string,
+    dto: MfaToggleDto,
+  ): Promise<{ mfaEnabled: boolean }> {
     const user = await this.usersService.findById(userId);
     if (!user) {
       throw new NotFoundException('User not found');

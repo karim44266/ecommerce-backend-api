@@ -24,11 +24,16 @@ export class CategoriesService {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  private async toResponse(category: CategoryDocument | Record<string, unknown>) {
-    const plain = typeof (category as CategoryDocument).toJSON === 'function'
-      ? ((category as CategoryDocument).toJSON() as Record<string, unknown>)
-      : category;
-    const productCount = await this.productModel.countDocuments({ categoryId: plain.id });
+  private async toResponse(
+    category: CategoryDocument | Record<string, unknown>,
+  ) {
+    const plain =
+      typeof (category as CategoryDocument).toJSON === 'function'
+        ? ((category as CategoryDocument).toJSON() as Record<string, unknown>)
+        : category;
+    const productCount = await this.productModel.countDocuments({
+      categoryId: plain.id,
+    });
 
     return {
       ...plain,
@@ -56,7 +61,11 @@ export class CategoriesService {
 
     const [total, rows] = await Promise.all([
       this.categoryModel.countDocuments(filter),
-      this.categoryModel.find(filter).sort({ name: 1 }).skip(offset).limit(limit),
+      this.categoryModel
+        .find(filter)
+        .sort({ name: 1 })
+        .skip(offset)
+        .limit(limit),
     ]);
 
     const data = await Promise.all(rows.map((row) => this.toResponse(row)));
@@ -74,7 +83,10 @@ export class CategoriesService {
 
   /** Get all categories (lightweight, for dropdowns). */
   async findAllSimple() {
-    const rows = await this.categoryModel.find().select('name slug').sort({ name: 1 });
+    const rows = await this.categoryModel
+      .find()
+      .select('name slug')
+      .sort({ name: 1 });
     return rows.map((row) => row.toJSON());
   }
 
@@ -92,14 +104,16 @@ export class CategoriesService {
 
     try {
       const created = await this.categoryModel.create({
-          name: dto.name,
-          slug,
-          description: dto.description ?? null,
-        });
+        name: dto.name,
+        slug,
+        description: dto.description ?? null,
+      });
       return this.findById(created.id);
     } catch (error: unknown) {
       if ((error as { code?: number })?.code === 11000) {
-        throw new ConflictException('Category with this name or slug already exists');
+        throw new ConflictException(
+          'Category with this name or slug already exists',
+        );
       }
       throw error;
     }
@@ -123,11 +137,17 @@ export class CategoriesService {
     }
 
     try {
-      await this.categoryModel.findByIdAndUpdate(id, { $set: values }, { new: true });
+      await this.categoryModel.findByIdAndUpdate(
+        id,
+        { $set: values },
+        { new: true },
+      );
       return this.findById(id);
     } catch (error: unknown) {
       if ((error as { code?: number })?.code === 11000) {
-        throw new ConflictException('Category with this name or slug already exists');
+        throw new ConflictException(
+          'Category with this name or slug already exists',
+        );
       }
       throw error;
     }
