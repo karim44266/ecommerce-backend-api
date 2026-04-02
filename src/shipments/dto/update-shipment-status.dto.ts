@@ -1,4 +1,4 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString, Length } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /** All valid shipment statuses */
@@ -52,4 +52,13 @@ export class UpdateShipmentStatusDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @ApiPropertyOptional({
+    description: 'Required 4-digit PIN when marking a shipment as DELIVERED',
+    example: '1234',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(4, 4)
+  deliveryCode?: string;
 }

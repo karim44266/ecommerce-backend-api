@@ -323,6 +323,24 @@ export class ShipmentsService {
       );
     }
 
+    const order = await this.orderModel.findById(shipment.orderId);
+    if (!order) {
+      throw new NotFoundException('Corresponding order not found');
+    }
+
+    if (dto.status === 'DELIVERED') {
+      if (!dto.deliveryCode) {
+        throw new BadRequestException(
+          'A 4-digit delivery code from the customer is required to mark the shipment as delivered.',
+        );
+      }
+      if (order.deliveryCode && order.deliveryCode !== dto.deliveryCode) {
+        throw new ForbiddenException(
+          'Invalid delivery code. Please ask the customer for the correct 4-digit code.',
+        );
+      }
+    }
+
     const orderStatusMap: Record<string, string> = {
       DELIVERED: 'DELIVERED',
       FAILED: 'IN_PREPARATION',

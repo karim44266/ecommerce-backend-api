@@ -126,11 +126,14 @@ export class OrdersService {
           }
         }
 
+        const deliveryCode = Math.floor(1000 + Math.random() * 9000).toString();
+
         const [order] = await this.orderModel.create(
           [
             {
               userId,
               status: 'DRAFT',
+              deliveryCode,
               totalAmount: totalCents,
               shippingAddress: dto.shippingAddress,
               items: itemsWithPrice.map((item) => ({
@@ -339,6 +342,19 @@ export class OrdersService {
       throw new BadRequestException(
         'Cancellation reason is required before shipment',
       );
+    }
+
+    if (dto.status === 'DELIVERED') {
+      if (!dto.deliveryCode) {
+        throw new BadRequestException(
+          'A 4-digit delivery code is required to mark an order as delivered.',
+        );
+      }
+      if (order.deliveryCode && order.deliveryCode !== dto.deliveryCode) {
+        throw new ForbiddenException(
+          'Invalid delivery code. Ask the customer for the correct 4-digit code.',
+        );
+      }
     }
 
     const updated = await this.orderModel.findByIdAndUpdate(
@@ -732,6 +748,7 @@ export class OrdersService {
       shippingAddress: plain.shippingAddress,
       trackingNumber: plain.trackingNumber,
       carrier: plain.carrier,
+      deliveryCode: plain.deliveryCode ?? null,
       erpReference: plain.erpReference ?? null,
       erpSyncStatus: plain.erpSyncStatus ?? 'NOT_SYNCED',
       erpSyncAttempts: plain.erpSyncAttempts ?? 0,

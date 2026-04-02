@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString, Length } from 'class-validator';
 
 export const ORDER_STATUSES = [
   'DRAFT',
@@ -43,4 +43,13 @@ export class UpdateOrderStatusDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @ApiPropertyOptional({
+    description: '4-digit delivery PIN required when changing status to DELIVERED',
+    example: '1234',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(4, 4)
+  deliveryCode?: string;
 }
