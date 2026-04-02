@@ -21,6 +21,7 @@ import {
   ApiConflictResponse,
 } from '@nestjs/swagger';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ClientPurchasesQueryDto } from './dto/client-purchases-query.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
@@ -129,5 +130,17 @@ export class UsersController {
   @ApiNotFoundResponse({ description: 'User not found' })
   updateStatus(@Param('id') id: string, @Body() dto: UpdateStatusDto) {
     return this.usersService.updateStatus(id, dto.status);
+  }
+
+  @Get(':id/purchases')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get client purchase history (admin only)' })
+  @ApiOkResponse({ description: 'Client purchase history with summary and pagination' })
+  @ApiNotFoundResponse({ description: 'User not found' })
+  getClientPurchases(
+    @Param('id') id: string,
+    @Query() query: ClientPurchasesQueryDto,
+  ) {
+    return this.usersService.getClientPurchases(id, query);
   }
 }
