@@ -177,36 +177,4 @@ export class UsersService {
     return { message: 'Password updated successfully' };
   }
 
-  async togglePersonalCatalogItem(userId: string, productId: string) {
-    const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    const personalCatalog = user.personalCatalog || [];
-    const index = personalCatalog.findIndex(
-      (id) => id.toString() === productId,
-    );
-
-    let added = false;
-    if (index > -1) {
-      personalCatalog.splice(index, 1);
-    } else {
-      personalCatalog.push(productId as any);
-      added = true;
-    }
-
-    await this.userModel.findByIdAndUpdate(userId, { personalCatalog });
-    return { added };
-  }
-
-  async getPersonalCatalog(userId: string): Promise<string[]> {
-    const user = await this.userModel
-      .findById(userId)
-      .select('personalCatalog');
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-    return (user.personalCatalog || []).map((id) => id.toString());
-  }
 }
