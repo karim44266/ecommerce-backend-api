@@ -8,13 +8,16 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
+import { Order, OrderDocument } from '../orders/schemas/order.schema';
 import { User, UserDocument } from './schemas/user.schema';
+import { ClientPurchasesQueryDto } from './dto/client-purchases-query.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
   ) {}
 
   async createUser(
@@ -150,6 +153,31 @@ export class UsersService {
     return this.sanitize(updated);
   }
 
+  async updateOwnAvailability(userId: string, availabilityStatus: string) {
+    const user = await this.userModel.findById(userId).select('roles');
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!(user.roles ?? []).includes('STAFF')) {
+      throw new UnauthorizedException(
+        'Only staff users can update availability',
+      );
+    }
+
+    const updated = await this.userModel.findByIdAndUpdate(
+      userId,
+      { availabilityStatus },
+      { new: true },
+    );
+
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.sanitize(updated);
+  }
+
   async changeOwnPassword(
     userId: string,
     currentPassword: string,
@@ -175,6 +203,106 @@ export class UsersService {
     await this.userModel.findByIdAndUpdate(userId, { passwordHash });
 
     return { message: 'Password updated successfully' };
+  }
+
+  async getClientPurchases(userId: string, query: ClientPurchasesQueryDto) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const offset = (page - 1) * limit;
+
+    const filter: Record<string, unknown> = {
+      userId,
+    };
+
+    if (query.status && query.status !== 'ALL') {
+      filter.status = query.status;
+    }
+
+    if (query.from || query.to) {
+      const createdAt: Record<string, Date> = {};
+      if (query.from) {
+        createdAt.$gte = new Date(query.from);
+      }
+      if (query.to) {
+        const endDate = new Date(query.to);
+        endDate.setHours(23, 59, 59, 999);
+        createdAt.$lte = endDate;
+      }
+      filter.createdAt = createdAt;
+    }
+
+    const [total, rows, summaryRows] = await Promise.all([
+      this.orderModel.countDocuments(filter),
+      this.orderModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(offset)
+        .limit(limit),
+      this.orderModel.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            totalOrders: { $sum: 1 },
+            totalSpent: { $sum: '$totalAmount' },
+            averageOrderValue: { $avg: '$totalAmount' },
+            lastPurchaseAt: { $max: '$createdAt' },
+          },
+        },
+      ]),
+    ]);
+
+    const summary = summaryRows[0] ?? {
+      totalOrders: 0,
+      totalSpent: 0,
+      averageOrderValue: 0,
+      lastPurchaseAt: null,
+    };
+
+    const purchases = rows.map((order) => {
+      const plain = order.toJSON() as Record<string, any>;
+      return {
+        id: plain.id,
+        status: plain.status,
+        totalAmount: Number(plain.totalAmount) / 100,
+        itemCount: Array.isArray(plain.items)
+          ? plain.items.reduce(
+              (sum: number, item: Record<string, any>) =>
+                sum + Number(item.quantity || 0),
+              0,
+            )
+          : 0,
+        createdAt: plain.createdAt,
+        shippingAddress: plain.shippingAddress,
+      };
+    });
+
+    return {
+      client: {
+        id: user.id,
+        email: user.email,
+        name: user.name || null,
+        status: user.status,
+      },
+      summary: {
+        totalOrders: Number(summary.totalOrders || 0),
+        totalSpent: Number(summary.totalSpent || 0) / 100,
+        averageOrderValue: Number(summary.averageOrderValue || 0) / 100,
+        lastPurchaseAt: summary.lastPurchaseAt || null,
+      },
+      purchases,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
 }

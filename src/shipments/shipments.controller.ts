@@ -90,8 +90,8 @@ export class ShipmentsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get staff users available for assignment' })
   @ApiOkResponse({ description: 'List of staff users' })
-  getStaffUsers() {
-    return this.shipmentsService.getStaffUsers();
+  getStaffUsers(@Query('includeUnavailable') includeUnavailable?: string) {
+    return this.shipmentsService.getStaffUsers(includeUnavailable === 'true');
   }
 
   // ─── Get Single Shipment ───────────────────────────────────
