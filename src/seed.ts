@@ -60,7 +60,6 @@ async function seed() {
       mfaOtpExpiresAt: null,
       refreshTokenHash: null,
       refreshTokenExpiresAt: null,
-      personalCatalog: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });

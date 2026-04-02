@@ -42,18 +42,11 @@ export class OrdersService {
   // ────────────────────────────────────────────────────────────────
 
   async create(userId: string, dto: CreateOrderDto) {
-    const orderingUser = await this.userModel
-      .findById(userId)
-      .select('roles personalCatalog');
+    const orderingUser = await this.userModel.findById(userId).select('roles');
 
     if (!orderingUser) {
       throw new NotFoundException('User not found');
     }
-
-    const isReseller = (orderingUser.roles ?? []).includes('RESELLER');
-    const personalCatalogSet = new Set(
-      (orderingUser.personalCatalog ?? []).map((id) => id.toString()),
-    );
 
     const productIds = dto.items.map((i) => i.productId);
 
@@ -67,11 +60,6 @@ export class OrdersService {
       const product = productMap.get(item.productId);
       if (!product) {
         throw new NotFoundException(`Product ${item.productId} not found`);
-      }
-      if (isReseller && !personalCatalogSet.has(item.productId)) {
-        throw new ForbiddenException(
-          `Product "${product.name}" is not in your personal catalog`,
-        );
       }
       if (product.status !== 'active') {
         throw new BadRequestException(
@@ -88,9 +76,7 @@ export class OrdersService {
     let totalCents = 0;
     const itemsWithPrice = dto.items.map((item) => {
       const product = productMap.get(item.productId)!;
-      const effectiveUnitPrice = isReseller
-        ? product.price * 0.8
-        : product.price;
+      const effectiveUnitPrice = product.price;
       const unitPriceCents = Math.round(effectiveUnitPrice * 100);
       totalCents += unitPriceCents * item.quantity;
       return {
@@ -419,15 +405,10 @@ export class OrdersService {
 
     const orderingUser = await this.userModel
       .findById(String(order.userId))
-      .select('roles personalCatalog');
+      .select('roles');
     if (!orderingUser) {
       throw new NotFoundException('User not found');
     }
-
-    const isReseller = (orderingUser.roles ?? []).includes('RESELLER');
-    const personalCatalogSet = new Set(
-      (orderingUser.personalCatalog ?? []).map((id) => id.toString()),
-    );
 
     const currentItems = order.items ?? [];
     const currentQtyByProduct = new Map<string, number>();
@@ -464,11 +445,6 @@ export class OrdersService {
       if (!product) {
         throw new NotFoundException(`Product ${item.productId} not found`);
       }
-      if (isReseller && !personalCatalogSet.has(item.productId)) {
-        throw new ForbiddenException(
-          `Product "${product.name}" is not in your personal catalog`,
-        );
-      }
       if (product.status !== 'active') {
         throw new BadRequestException(
           `Product "${product.name}" is not available`,
@@ -492,9 +468,7 @@ export class OrdersService {
     let totalCents = 0;
     const itemsWithPrice = targetItems.map((item) => {
       const product = productMap.get(item.productId)!;
-      const effectiveUnitPrice = isReseller
-        ? product.price * 0.8
-        : product.price;
+      const effectiveUnitPrice = product.price;
       const unitPriceCents = Math.round(effectiveUnitPrice * 100);
       totalCents += unitPriceCents * item.quantity;
       return {

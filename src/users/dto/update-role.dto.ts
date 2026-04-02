@@ -4,9 +4,9 @@ import { IsIn, IsString } from 'class-validator';
 export class UpdateRoleDto {
   @ApiProperty({
     example: 'admin',
-    enum: ['admin', 'staff', 'customer', 'reseller'],
+    enum: ['admin', 'staff', 'customer'],
   })
   @IsString()
-  @IsIn(['admin', 'staff', 'customer', 'reseller'])
+  @IsIn(['admin', 'staff', 'customer'])
   role: string;
 }
