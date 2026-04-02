@@ -21,6 +21,7 @@ import {
   ApiConflictResponse,
 } from '@nestjs/swagger';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ClientPurchasesQueryDto } from './dto/client-purchases-query.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
