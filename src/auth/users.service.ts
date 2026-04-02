@@ -13,9 +13,14 @@ export class UsersService {
     return this.userModel.findOne({ email: email.toLowerCase() });
   }
 
-  async createUser(email: string, passwordHash: string): Promise<UserDocument> {
+  async createUser(
+    email: string,
+    passwordHash: string,
+    name: string,
+  ): Promise<UserDocument> {
     return this.userModel.create({
       email: email.toLowerCase(),
+      name: name.trim(),
       passwordHash,
       roles: ['CUSTOMER'],
     });

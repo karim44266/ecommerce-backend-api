@@ -24,6 +24,9 @@ export class User {
   @Prop({ default: 'active' })
   status: string;
 
+  @Prop({ default: 'UNAVAILABLE' })
+  availabilityStatus: string;
+
   @Prop({ required: true })
   passwordHash: string;
 

@@ -92,7 +92,7 @@ export class ShipmentsService {
 
     const staffUser = await this.userModel
       .findById(dto.staffUserId)
-      .select('roles');
+      .select('roles status availabilityStatus');
 
     if (!staffUser) {
       throw new NotFoundException('Staff user not found');
@@ -100,6 +100,14 @@ export class ShipmentsService {
 
     if (!(staffUser.roles ?? []).includes('STAFF')) {
       throw new BadRequestException('Assigned user must have the STAFF role');
+    }
+
+    if (staffUser.status !== 'active') {
+      throw new BadRequestException('Assigned staff user is not active');
+    }
+
+    if (staffUser.availabilityStatus !== 'AVAILABLE') {
+      throw new BadRequestException('Assigned staff user is not available');
     }
 
     const session = await this.connection.startSession();
@@ -266,7 +274,7 @@ export class ShipmentsService {
 
     const newStaff = await this.userModel
       .findById(dto.staffUserId)
-      .select('roles');
+      .select('roles status availabilityStatus');
 
     if (!newStaff) {
       throw new NotFoundException('Staff user not found');
@@ -274,6 +282,14 @@ export class ShipmentsService {
 
     if (!(newStaff.roles ?? []).includes('STAFF')) {
       throw new BadRequestException('Assigned user must have the STAFF role');
+    }
+
+    if (newStaff.status !== 'active') {
+      throw new BadRequestException('Assigned staff user is not active');
+    }
+
+    if (newStaff.availabilityStatus !== 'AVAILABLE') {
+      throw new BadRequestException('Assigned staff user is not available');
     }
 
     const updated = await this.shipmentModel.findByIdAndUpdate(
@@ -402,10 +418,19 @@ export class ShipmentsService {
   //  Get Staff Users (helper for admin dropdown)
   // ──────────────────────────────────────────────────────────────
 
-  async getStaffUsers() {
+  async getStaffUsers(includeUnavailable = false) {
+    const filter: Record<string, unknown> = {
+      roles: 'STAFF',
+      status: 'active',
+    };
+
+    if (!includeUnavailable) {
+      filter.availabilityStatus = 'AVAILABLE';
+    }
+
     const rows = await this.userModel
-      .find({ roles: 'STAFF' })
-      .select('email name')
+      .find(filter)
+      .select('email name availabilityStatus')
       .sort({ name: 1 });
 
     return rows.map((row) => row.toJSON());

@@ -26,6 +26,8 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
+import { UpdateAvailabilityDto } from './dto/update-availability.dto';
+import { ClientPurchasesQueryDto } from './dto/client-purchases-query.dto';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import * as bcrypt from 'bcrypt';
@@ -66,6 +68,20 @@ export class UsersController {
       request.user.userId,
       dto.currentPassword,
       dto.newPassword,
+    );
+  }
+
+  @Patch('me/availability')
+  @Roles('STAFF')
+  @ApiOperation({ summary: 'Update current staff availability status' })
+  @ApiOkResponse({ description: 'Updated staff availability' })
+  updateOwnAvailability(
+    @Req() request: { user: { userId: string } },
+    @Body() dto: UpdateAvailabilityDto,
+  ) {
+    return this.usersService.updateOwnAvailability(
+      request.user.userId,
+      dto.availabilityStatus,
     );
   }
 
@@ -135,7 +151,7 @@ export class UsersController {
   @Get(':id/purchases')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Get client purchase history (admin only)' })
-  @ApiOkResponse({ description: 'Client purchase history with summary and pagination' })
+  @ApiOkResponse({ description: 'Client purchase history' })
   @ApiNotFoundResponse({ description: 'User not found' })
   getClientPurchases(
     @Param('id') id: string,

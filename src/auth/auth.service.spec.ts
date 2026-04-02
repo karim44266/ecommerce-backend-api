@@ -143,10 +143,16 @@ describe('AuthService', () => {
     (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
 
     await authService.register({
+      name: 'New User',
       email: 'new@example.com',
       password: 'secret',
     });
 
+    expect(usersService.createUser).toHaveBeenCalledWith(
+      'new@example.com',
+      'hashed-password',
+      'New User',
+    );
     expect(usersService.ensureDefaultRole).toHaveBeenCalledWith('user-2');
     expect(jwtService.signAsync).toHaveBeenCalledWith(
       expect.objectContaining({ roles: ['CUSTOMER'] }),

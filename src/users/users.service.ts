@@ -9,8 +9,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
-import { ClientPurchasesQueryDto } from './dto/client-purchases-query.dto';
 import { User, UserDocument } from './schemas/user.schema';
+import { ClientPurchasesQueryDto } from './dto/client-purchases-query.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
@@ -153,6 +153,31 @@ export class UsersService {
     return this.sanitize(updated);
   }
 
+  async updateOwnAvailability(userId: string, availabilityStatus: string) {
+    const user = await this.userModel.findById(userId).select('roles');
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!(user.roles ?? []).includes('STAFF')) {
+      throw new UnauthorizedException(
+        'Only staff users can update availability',
+      );
+    }
+
+    const updated = await this.userModel.findByIdAndUpdate(
+      userId,
+      { availabilityStatus },
+      { new: true },
+    );
+
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.sanitize(updated);
+  }
+
   async changeOwnPassword(
     userId: string,
     currentPassword: string,
@@ -181,27 +206,20 @@ export class UsersService {
   }
 
   async getClientPurchases(userId: string, query: ClientPurchasesQueryDto) {
-    const clientUser = await this.userModel.findById(userId);
-    if (!clientUser) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
       throw new NotFoundException('User not found');
     }
-    const client = this.sanitize(clientUser) as {
-      id?: string;
-      _id?: unknown;
-      email: string;
-      name?: string;
-      status: string;
-    };
 
-    const page = Math.max(1, query.page ?? 1);
-    const limit = Math.min(100, Math.max(1, query.limit ?? 20));
-    const skip = (page - 1) * limit;
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const offset = (page - 1) * limit;
 
     const filter: Record<string, unknown> = {
-      userId: new Types.ObjectId(userId),
+      userId,
     };
 
-    if (query.status) {
+    if (query.status && query.status !== 'ALL') {
       filter.status = query.status;
     }
 
@@ -211,31 +229,11 @@ export class UsersService {
         createdAt.$gte = new Date(query.from);
       }
       if (query.to) {
-        const toDate = new Date(query.to);
-        toDate.setHours(23, 59, 59, 999);
-        createdAt.$lte = toDate;
+        const endDate = new Date(query.to);
+        endDate.setHours(23, 59, 59, 999);
+        createdAt.$lte = endDate;
       }
       filter.createdAt = createdAt;
-    }
-
-    if (query.minTotal !== undefined || query.maxTotal !== undefined) {
-      const totalAmount: Record<string, number> = {};
-      if (query.minTotal !== undefined) {
-        totalAmount.$gte = Math.round(query.minTotal * 100);
-      }
-      if (query.maxTotal !== undefined) {
-        totalAmount.$lte = Math.round(query.maxTotal * 100);
-      }
-      filter.totalAmount = totalAmount;
-    }
-
-    if (query.search?.trim()) {
-      const search = query.search.trim();
-      if (Types.ObjectId.isValid(search)) {
-        filter._id = new Types.ObjectId(search);
-      } else {
-        filter._id = { $exists: false };
-      }
     }
 
     const [total, rows, summaryRows] = await Promise.all([
@@ -243,7 +241,7 @@ export class UsersService {
       this.orderModel
         .find(filter)
         .sort({ createdAt: -1 })
-        .skip(skip)
+        .skip(offset)
         .limit(limit),
       this.orderModel.aggregate([
         { $match: filter },
@@ -251,9 +249,9 @@ export class UsersService {
           $group: {
             _id: null,
             totalOrders: { $sum: 1 },
-            totalSpentCents: { $sum: '$totalAmount' },
-            averageOrderCents: { $avg: '$totalAmount' },
-            lastPurchaseDate: { $max: '$createdAt' },
+            totalSpent: { $sum: '$totalAmount' },
+            averageOrderValue: { $avg: '$totalAmount' },
+            lastPurchaseAt: { $max: '$createdAt' },
           },
         },
       ]),
@@ -261,36 +259,43 @@ export class UsersService {
 
     const summary = summaryRows[0] ?? {
       totalOrders: 0,
-      totalSpentCents: 0,
-      averageOrderCents: 0,
-      lastPurchaseDate: null,
+      totalSpent: 0,
+      averageOrderValue: 0,
+      lastPurchaseAt: null,
     };
 
-    const orders = rows.map((order) => ({
-      id: order.id,
-      createdAt: (order as unknown as { createdAt: Date }).createdAt,
-      status: order.status,
-      totalAmount: Number(order.totalAmount) / 100,
-      itemCount: (order.items ?? []).reduce(
-        (acc, item) => acc + (item.quantity ?? 0),
-        0,
-      ),
-    }));
+    const purchases = rows.map((order) => {
+      const plain = order.toJSON() as Record<string, any>;
+      return {
+        id: plain.id,
+        status: plain.status,
+        totalAmount: Number(plain.totalAmount) / 100,
+        itemCount: Array.isArray(plain.items)
+          ? plain.items.reduce(
+              (sum: number, item: Record<string, any>) =>
+                sum + Number(item.quantity || 0),
+              0,
+            )
+          : 0,
+        createdAt: plain.createdAt,
+        shippingAddress: plain.shippingAddress,
+      };
+    });
 
     return {
       client: {
-        id: client.id ?? String(client._id),
-        email: client.email,
-        name: client.name,
-        status: client.status,
+        id: user.id,
+        email: user.email,
+        name: user.name || null,
+        status: user.status,
       },
       summary: {
-        totalOrders: summary.totalOrders,
-        totalSpent: Number(summary.totalSpentCents || 0) / 100,
-        averageOrderValue: Number(summary.averageOrderCents || 0) / 100,
-        lastPurchaseDate: summary.lastPurchaseDate,
+        totalOrders: Number(summary.totalOrders || 0),
+        totalSpent: Number(summary.totalSpent || 0) / 100,
+        averageOrderValue: Number(summary.averageOrderValue || 0) / 100,
+        lastPurchaseAt: summary.lastPurchaseAt || null,
       },
-      orders,
+      purchases,
       meta: {
         total,
         page,
@@ -299,4 +304,5 @@ export class UsersService {
       },
     };
   }
+
 }

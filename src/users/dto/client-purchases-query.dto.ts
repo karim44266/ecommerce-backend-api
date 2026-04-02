@@ -2,69 +2,41 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsDateString,
-  IsIn,
   IsInt,
-  IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
 } from 'class-validator';
 
-const ORDER_STATUSES = [
-  'DRAFT',
-  'CONFIRMED',
-  'IN_PREPARATION',
-  'DELIVERED',
-  'SETTLED',
-  'CANCELLED',
-] as const;
-
 export class ClientPurchasesQueryDto {
-  @ApiPropertyOptional({ description: 'Search by order ID' })
+  @ApiPropertyOptional({ example: 'DELIVERED' })
   @IsOptional()
   @IsString()
-  search?: string;
-
-  @ApiPropertyOptional({ enum: ORDER_STATUSES, description: 'Filter by order status' })
-  @IsOptional()
-  @IsIn(ORDER_STATUSES)
   status?: string;
 
-  @ApiPropertyOptional({ example: '2026-01-01', description: 'Created at from date (ISO)' })
+  @ApiPropertyOptional({ example: '2026-01-01' })
   @IsOptional()
   @IsDateString()
   from?: string;
 
-  @ApiPropertyOptional({ example: '2026-12-31', description: 'Created at to date (ISO)' })
+  @ApiPropertyOptional({ example: '2026-12-31' })
   @IsOptional()
   @IsDateString()
   to?: string;
 
-  @ApiPropertyOptional({ example: 0, description: 'Minimum total amount (major currency units)' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
-  minTotal?: number;
-
-  @ApiPropertyOptional({ example: 1000, description: 'Maximum total amount (major currency units)' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
-  maxTotal?: number;
-
-  @ApiPropertyOptional({ default: 1 })
+  @ApiPropertyOptional({ example: 1, default: 1 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  page?: number = 1;
+  page?: number;
 
-  @ApiPropertyOptional({ default: 20 })
+  @ApiPropertyOptional({ example: 10, default: 10 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  limit?: number = 20;
+  @Max(100)
+  limit?: number;
 }
