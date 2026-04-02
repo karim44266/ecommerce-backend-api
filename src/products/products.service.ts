@@ -32,7 +32,6 @@ export class ProductsService {
   /** Map a raw DB row + category name to the API response shape. */
   private toResponse(
     product: ProductDocument | Record<string, unknown>,
-    options?: { isReseller?: boolean; personalCatalog?: string[] },
   ) {
     const plain =
       typeof (product as ProductDocument).toJSON === 'function'
@@ -47,7 +46,6 @@ export class ProductsService {
         ? (plain.categoryId as Record<string, unknown>)
         : null;
 
-    const price = Number(plain.price);
     const productIdStr = String(plain.id || plain._id);
 
     const baseResponse = {
@@ -66,14 +64,6 @@ export class ProductsService {
       createdAt: plain.createdAt,
       updatedAt: plain.updatedAt,
     };
-
-    if (options?.isReseller) {
-      Object.assign(baseResponse, {
-        resellerPrice: price * 0.8,
-        inPersonalCatalog:
-          options.personalCatalog?.includes(productIdStr) ?? false,
-      });
-    }
 
     return baseResponse;
   }
@@ -149,11 +139,7 @@ export class ProductsService {
 
   async findAll(
     query: ProductQueryDto,
-    options?: {
-      allowedProductIds?: string[];
-      personalCatalog?: string[];
-      isReseller?: boolean;
-    },
+    options?: { allowedProductIds?: string[] },
   ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -183,7 +169,7 @@ export class ProductsService {
     ]);
 
     return {
-      data: rows.map((row) => this.toResponse(row, options)),
+      data: rows.map((row) => this.toResponse(row)),
       meta: {
         total,
         page,
@@ -193,10 +179,7 @@ export class ProductsService {
     };
   }
 
-  async findById(
-    id: string,
-    options?: { isReseller?: boolean; personalCatalog?: string[] },
-  ) {
+  async findById(id: string) {
     const product = await this.productModel
       .findById(id)
       .populate('categoryId', 'name');
@@ -205,7 +188,7 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
 
-    return this.toResponse(product, options);
+    return this.toResponse(product);
   }
 
   async create(dto: CreateProductDto) {
