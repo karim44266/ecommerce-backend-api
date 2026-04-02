@@ -85,6 +85,9 @@ export class Order {
   @Prop({ type: String, default: null, index: true })
   erpReference: string | null;
 
+  @Prop({ type: String, default: null })
+  deliveryCode: string | null;
+
   @Prop({ type: String, default: 'NOT_SYNCED', index: true })
   erpSyncStatus: 'NOT_SYNCED' | 'PENDING' | 'SYNCED' | 'FAILED';
 
