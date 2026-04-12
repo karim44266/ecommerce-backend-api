@@ -1,5 +1,13 @@
-import { IsInt, IsOptional, IsString, NotEquals } from 'class-validator';
+import {
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  NotEquals,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export class AdjustStockDto {
   @ApiProperty({
@@ -18,4 +26,15 @@ export class AdjustStockDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Purchase unit price used for stock increases (required when adjustment is positive).',
+    example: 62.5,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  purchasePrice?: number;
 }

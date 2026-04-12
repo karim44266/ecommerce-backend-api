@@ -32,6 +32,9 @@ export class Product {
   @Prop({ required: true, type: Number, min: 0 })
   price: number;
 
+  @Prop({ type: Number, min: 0, default: 0 })
+  costPrice: number;
+
   @Prop({ default: '' })
   image: string;
 

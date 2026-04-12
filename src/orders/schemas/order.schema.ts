@@ -21,6 +21,9 @@ export class OrderItem {
 
   @Prop({ required: true })
   unitPrice: number;
+
+  @Prop({ required: true, default: 0 })
+  unitCost: number;
 }
 
 @Schema()
