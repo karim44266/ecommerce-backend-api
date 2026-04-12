@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsInt,
   IsMongoId,
   IsNotEmpty,
   IsNumber,
@@ -44,13 +43,6 @@ export class CreateProductDto {
   @IsString()
   @IsOptional()
   image?: string;
-
-  @ApiPropertyOptional({ example: 50 })
-  @IsInt()
-  @Min(0)
-  @IsOptional()
-  @Type(() => Number)
-  inventory?: number;
 
   @ApiPropertyOptional({
     example: 'active',

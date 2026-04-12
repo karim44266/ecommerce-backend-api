@@ -70,21 +70,30 @@ export class UsersService {
     };
   }
 
-  async findAll(query?: { page?: number; limit?: number; search?: string }) {
+  async findAll(query?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    role?: string;
+  }) {
     const page = query?.page ?? 1;
     const limit = query?.limit ?? 20;
     const offset = (page - 1) * limit;
 
-    const filter = query?.search
-      ? {
-          $or: [
-            {
-              email: { $regex: this.escapeRegex(query.search), $options: 'i' },
-            },
-            { name: { $regex: this.escapeRegex(query.search), $options: 'i' } },
-          ],
-        }
-      : {};
+    const filter: Record<string, unknown> = {};
+
+    if (query?.search) {
+      filter.$or = [
+        {
+          email: { $regex: this.escapeRegex(query.search), $options: 'i' },
+        },
+        { name: { $regex: this.escapeRegex(query.search), $options: 'i' } },
+      ];
+    }
+
+    if (query?.role) {
+      filter.roles = query.role.toUpperCase();
+    }
 
     const [total, rows] = await Promise.all([
       this.userModel.countDocuments(filter),

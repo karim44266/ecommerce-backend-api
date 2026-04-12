@@ -1,7 +1,8 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBearerAuth,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -38,5 +39,13 @@ export class AnalyticsController {
   @ApiOkResponse({ description: 'Order statuses with counts' })
   getStatusDistribution() {
     return this.analyticsService.getStatusDistribution();
+  }
+
+  @Get('products/:productId')
+  @ApiOperation({ summary: 'Get product-level order and refill insights' })
+  @ApiOkResponse({ description: 'Product analytics summary' })
+  @ApiNotFoundResponse({ description: 'Product not found' })
+  getProductInsights(@Param('productId') productId: string, @Query('days') days: string) {
+    return this.analyticsService.getProductInsights(productId, days ? Number(days) : 30);
   }
 }

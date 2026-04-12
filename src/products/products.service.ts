@@ -199,20 +199,17 @@ export class ProductsService {
         description: dto.description ?? '',
         price: dto.price,
         image: dto.image ?? '',
-        inventory: dto.inventory ?? 0,
+        inventory: 0,
         status: dto.status ?? 'active',
         categoryId: dto.categoryId ?? null,
         inventoryInfo: {
-          quantity: dto.inventory ?? 0,
+          quantity: 0,
           lowStockThreshold: 10,
           lastAdjustedAt: null,
         },
       });
 
-      await this.inventoryService.ensureInventory(
-        created.id,
-        dto.inventory ?? 0,
-      );
+      await this.inventoryService.ensureInventory(created.id, 0);
 
       return this.findById(created.id);
     } catch (error: unknown) {

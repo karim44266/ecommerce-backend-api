@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
 import {
   Shipment,
@@ -254,6 +254,212 @@ export class AnalyticsService {
 
     return {
       statuses: rows,
+    };
+  }
+
+  async getProductInsights(productId: string, days = 30) {
+    const safeDays = Number.isFinite(days) && days > 0 ? Math.min(days, 365) : 30;
+    if (!Types.ObjectId.isValid(productId)) {
+      return {
+        days: safeDays,
+        totalOrders: 0,
+        soldUnits: 0,
+        grossSales: 0,
+        totalCost: 0,
+        netRevenue: 0,
+        trend: {
+          labels: [],
+          ordersPerDay: [],
+          revenuePerDay: [],
+          marginPercentPerDay: [],
+        },
+      };
+    }
+
+    const productObjectId = new Types.ObjectId(productId);
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - (safeDays - 1));
+
+    const [productInsights] = await this.orderModel.aggregate<{
+      totalOrders: number;
+      soldUnits: number;
+      grossSalesCents: number;
+      totalCostCents: number;
+    }>([
+      {
+        $match: {
+          createdAt: { $gte: start },
+          status: { $in: SOLD_ORDER_STATUSES },
+        },
+      },
+      { $unwind: '$items' },
+      {
+        $match: {
+          'items.productId': productObjectId,
+        },
+      },
+      {
+        $project: {
+          orderId: '$_id',
+          quantity: { $ifNull: ['$items.quantity', 0] },
+          lineGrossCents: {
+            $multiply: [
+              { $ifNull: ['$items.quantity', 0] },
+              { $ifNull: ['$items.unitPrice', 0] },
+            ],
+          },
+          lineCostCents: {
+            $multiply: [
+              { $ifNull: ['$items.quantity', 0] },
+              { $ifNull: ['$items.unitCost', 0] },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          orderIds: { $addToSet: '$orderId' },
+          soldUnits: { $sum: '$quantity' },
+          grossSalesCents: { $sum: '$lineGrossCents' },
+          totalCostCents: { $sum: '$lineCostCents' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalOrders: { $size: '$orderIds' },
+          soldUnits: 1,
+          grossSalesCents: 1,
+          totalCostCents: 1,
+        },
+      },
+    ]);
+
+    const trendRows = await this.orderModel.aggregate<{
+      date: string;
+      orders: number;
+      grossSalesCents: number;
+      totalCostCents: number;
+      revenueCents: number;
+    }>([
+      {
+        $match: {
+          createdAt: { $gte: start },
+          status: { $in: SOLD_ORDER_STATUSES },
+        },
+      },
+      { $unwind: '$items' },
+      {
+        $match: {
+          'items.productId': productObjectId,
+        },
+      },
+      {
+        $project: {
+          createdAt: 1,
+          orderId: '$_id',
+          lineGrossCents: {
+            $multiply: [
+              { $ifNull: ['$items.quantity', 0] },
+              { $ifNull: ['$items.unitPrice', 0] },
+            ],
+          },
+          lineCostCents: {
+            $multiply: [
+              { $ifNull: ['$items.quantity', 0] },
+              { $ifNull: ['$items.unitCost', 0] },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            date: {
+              $dateToString: {
+                format: '%Y-%m-%d',
+                date: '$createdAt',
+              },
+            },
+            orderId: '$orderId',
+          },
+          grossSalesCents: { $sum: '$lineGrossCents' },
+          totalCostCents: { $sum: '$lineCostCents' },
+        },
+      },
+      {
+        $group: {
+          _id: '$_id.date',
+          orders: { $sum: 1 },
+          grossSalesCents: { $sum: '$grossSalesCents' },
+          totalCostCents: { $sum: '$totalCostCents' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          date: '$_id',
+          orders: 1,
+          grossSalesCents: 1,
+          totalCostCents: 1,
+          revenueCents: { $subtract: ['$grossSalesCents', '$totalCostCents'] },
+        },
+      },
+      { $sort: { date: 1 } },
+    ]);
+
+    const stats = productInsights ?? {
+      totalOrders: 0,
+      soldUnits: 0,
+      grossSalesCents: 0,
+      totalCostCents: 0,
+    };
+
+    const byDate = new Map(trendRows.map((row) => [row.date, row]));
+    const labels: string[] = [];
+    const ordersPerDay: number[] = [];
+    const revenuePerDay: number[] = [];
+    const marginPercentPerDay: number[] = [];
+
+    for (let i = 0; i < safeDays; i += 1) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const date = d.toISOString().slice(0, 10);
+      const row = byDate.get(date);
+
+      const gross = Number(((row?.grossSalesCents ?? 0) / 100).toFixed(2));
+      const net = Number(((row?.revenueCents ?? 0) / 100).toFixed(2));
+
+      labels.push(
+        d.toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+        }),
+      );
+      ordersPerDay.push(row?.orders ?? 0);
+      revenuePerDay.push(net);
+      marginPercentPerDay.push(gross > 0 ? Number(((net / gross) * 100).toFixed(1)) : 0);
+    }
+
+    const netRevenue = Number(
+      ((stats.grossSalesCents - stats.totalCostCents) / 100).toFixed(2),
+    );
+
+    return {
+      days: safeDays,
+      totalOrders: stats.totalOrders,
+      soldUnits: stats.soldUnits,
+      grossSales: Number((stats.grossSalesCents / 100).toFixed(2)),
+      totalCost: Number((stats.totalCostCents / 100).toFixed(2)),
+      netRevenue,
+      trend: {
+        labels,
+        ordersPerDay,
+        revenuePerDay,
+        marginPercentPerDay,
+      },
     };
   }
 }
