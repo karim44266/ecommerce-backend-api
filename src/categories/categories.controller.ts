@@ -54,6 +54,17 @@ export class CategoriesController {
     return this.categoriesService.findAllSimple();
   }
 
+  @Get(':id/details')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get category analytics details (admin only)' })
+  @ApiOkResponse({ description: 'Category detail analytics summary' })
+  @ApiNotFoundResponse({ description: 'Category not found' })
+  findDetails(@Param('id') id: string, @Query('days') days?: string) {
+    return this.categoriesService.findDetails(id, days ? Number(days) : 30);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get category by ID' })
   @ApiOkResponse({
