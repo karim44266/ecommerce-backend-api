@@ -20,6 +20,12 @@ export class InventoryResponseDto {
   @ApiProperty({ example: 50 })
   quantity: number;
 
+  @ApiProperty({ example: 99.99 })
+  currentPrice: number;
+
+  @ApiProperty({ example: 62.5 })
+  currentCostPrice: number;
+
   @ApiProperty({ example: 10 })
   lowStockThreshold: number;
 
@@ -88,6 +94,15 @@ export class AdjustmentHistoryEntryDto {
 
   @ApiPropertyOptional({ example: 'Damaged goods', nullable: true })
   reason: string | null;
+
+  @ApiPropertyOptional({ example: 58.25, nullable: true })
+  purchasePrice: number | null;
+
+  @ApiPropertyOptional({ example: 54.1, nullable: true })
+  previousCostPrice: number | null;
+
+  @ApiPropertyOptional({ example: 56.35, nullable: true })
+  newCostPrice: number | null;
 
   @ApiPropertyOptional({ example: 'admin@test.com', nullable: true })
   adjustedBy: string | null;

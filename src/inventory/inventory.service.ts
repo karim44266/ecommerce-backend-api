@@ -50,6 +50,8 @@ export class InventoryService {
       productSku: plain.sku,
       productStatus: plain.status,
       quantity: inventoryInfo.quantity ?? plain.inventory ?? 0,
+      currentPrice: Number(plain.price ?? 0),
+      currentCostPrice: Number(plain.costPrice ?? 0),
       lowStockThreshold: inventoryInfo.lowStockThreshold ?? 10,
       isLowStock:
         overrides?.isLowStock ??
@@ -294,6 +296,7 @@ export class InventoryService {
     productId: string,
     adjustment: number,
     reason?: string,
+    purchasePrice?: number,
     adjustedBy?: string,
   ) {
     const existing = await this.productModel.findById(productId);
@@ -309,6 +312,21 @@ export class InventoryService {
       let response: Record<string, unknown> | null = null;
 
       await session.withTransaction(async () => {
+        const previousQuantity = Number(
+          existing.inventoryInfo?.quantity ?? existing.inventory ?? 0,
+        );
+        const previousCostPrice = Number(existing.costPrice ?? 0);
+        const roundedPurchasePrice =
+          purchasePrice !== undefined
+            ? Number(purchasePrice.toFixed(2))
+            : undefined;
+
+        if (adjustment > 0 && roundedPurchasePrice === undefined) {
+          throw new BadRequestException(
+            'Purchase price is required when adding stock',
+          );
+        }
+
         const filter: FilterQuery<ProductDocument> =
           adjustment < 0
             ? {
@@ -317,6 +335,23 @@ export class InventoryService {
               }
             : { _id: productId };
 
+        const nextQuantity = previousQuantity + adjustment;
+        const nextCostPrice =
+          adjustment > 0 && roundedPurchasePrice !== undefined
+            ? Number(
+                (
+                  (previousQuantity * previousCostPrice +
+                    adjustment * roundedPurchasePrice) /
+                  Math.max(nextQuantity, 1)
+                ).toFixed(2),
+              )
+            : previousCostPrice;
+
+        const setPatch: Record<string, unknown> = {
+          'inventoryInfo.lastAdjustedAt': new Date(),
+          costPrice: nextCostPrice,
+        };
+
         const updated = await this.productModel.findOneAndUpdate(
           filter,
           {
@@ -324,9 +359,7 @@ export class InventoryService {
               'inventoryInfo.quantity': adjustment,
               inventory: adjustment,
             },
-            $set: {
-              'inventoryInfo.lastAdjustedAt': new Date(),
-            },
+            $set: setPatch,
           },
           { new: true, session },
         );
@@ -343,6 +376,9 @@ export class InventoryService {
               productId,
               adjustment,
               reason: reason ?? null,
+              purchasePrice: roundedPurchasePrice ?? null,
+              previousCostPrice,
+              newCostPrice: nextCostPrice,
               adjustedBy: adjustedBy ?? null,
             },
           ],
@@ -418,6 +454,9 @@ export class InventoryService {
           id: plain.id,
           adjustment: plain.adjustment,
           reason: plain.reason,
+          purchasePrice: plain.purchasePrice ?? null,
+          previousCostPrice: plain.previousCostPrice ?? null,
+          newCostPrice: plain.newCostPrice ?? null,
           adjustedBy:
             plain.adjustedBy && typeof plain.adjustedBy === 'object'
               ? (plain.adjustedBy.email ?? null)

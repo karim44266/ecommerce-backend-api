@@ -77,13 +77,16 @@ export class OrdersService {
     const itemsWithPrice = dto.items.map((item) => {
       const product = productMap.get(item.productId)!;
       const effectiveUnitPrice = product.price;
+      const effectiveUnitCost = Number(product.costPrice ?? 0);
       const unitPriceCents = Math.round(effectiveUnitPrice * 100);
+      const unitCostCents = Math.round(effectiveUnitCost * 100);
       totalCents += unitPriceCents * item.quantity;
       return {
         productId: item.productId,
         productName: product.name,
         quantity: item.quantity,
         unitPriceCents,
+        unitCostCents,
       };
     });
 
@@ -127,6 +130,7 @@ export class OrdersService {
                 name: item.productName,
                 quantity: item.quantity,
                 unitPrice: item.unitPriceCents,
+                unitCost: item.unitCostCents,
               })),
               statusHistory: [
                 {
@@ -738,6 +742,7 @@ export class OrdersService {
         name: item.name,
         quantity: item.quantity,
         unitPrice: Number(item.unitPrice) / 100,
+        unitCost: Number(item.unitCost ?? 0) / 100,
       })),
       statusHistory: (plain.statusHistory ?? []).map(
         (entry: Record<string, any>) => ({

@@ -36,7 +36,7 @@ export class CreateProductDto {
     description: 'Price in dollars (max 2 decimal places)',
   })
   @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
+  @Min(0.01)
   @Type(() => Number)
   price: number;
 

@@ -20,6 +20,15 @@ export class InventoryAdjustment {
   @Prop({ type: String, default: null })
   reason: string | null;
 
+  @Prop({ type: Number, default: null })
+  purchasePrice: number | null;
+
+  @Prop({ type: Number, default: null })
+  previousCostPrice: number | null;
+
+  @Prop({ type: Number, default: null })
+  newCostPrice: number | null;
+
   @Prop({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

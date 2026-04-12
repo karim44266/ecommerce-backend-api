@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerModule } from '@nestjs/throttler';
 import path from 'node:path';
+import { AnalyticsModule } from './analytics';
 import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
 import { InventoryModule } from './inventory/inventory.module';
@@ -37,6 +38,7 @@ import { AppService } from './app.service';
       },
     ]),
     AuthModule,
+    AnalyticsModule,
     CategoriesModule,
     InventoryModule,
     OrdersModule,

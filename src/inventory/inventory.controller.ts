@@ -137,6 +137,7 @@ export class InventoryController {
       productId,
       dto.adjustment,
       dto.reason,
+      dto.purchasePrice,
       req.user?.userId,
     );
   }

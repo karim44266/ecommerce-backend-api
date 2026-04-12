@@ -27,7 +27,6 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
-import { ClientPurchasesQueryDto } from './dto/client-purchases-query.dto';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import * as bcrypt from 'bcrypt';
