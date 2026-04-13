@@ -8,7 +8,9 @@ import {
 } from '../shipments/schemas/shipment.schema';
 
 const ACTIVE_SHIPMENT_STATUSES = ['ASSIGNED', 'IN_TRANSIT'];
-const SOLD_ORDER_STATUSES = ['DELIVERED'];
+const SOLD_ORDER_STATUSES = ['DELIVERED', 'SETTLED'];
+const OPEN_ORDER_STATUSES = ['DRAFT', 'CONFIRMED', 'IN_PREPARATION'];
+const REVENUE_TREND_STATUSES = [...OPEN_ORDER_STATUSES, ...SOLD_ORDER_STATUSES];
 
 @Injectable()
 export class AnalyticsService {
@@ -31,7 +33,7 @@ export class AnalyticsService {
             totalOrders: { $sum: 1 },
             pendingOrders: {
               $sum: {
-                $cond: [{ $eq: ['$status', 'PENDING'] }, 1, 0],
+                $cond: [{ $in: ['$status', OPEN_ORDER_STATUSES] }, 1, 0],
               },
             },
           },
@@ -133,12 +135,12 @@ export class AnalyticsService {
       {
         $match: {
           createdAt: { $gte: start },
-          status: { $in: SOLD_ORDER_STATUSES },
         },
       },
       {
         $project: {
           createdAt: 1,
+          status: 1,
           totalAmount: 1,
           orderCostCents: {
             $reduce: {
@@ -168,10 +170,32 @@ export class AnalyticsService {
             },
           },
           orders: { $sum: 1 },
-          grossSalesCents: { $sum: '$totalAmount' },
-          totalCostCents: { $sum: '$orderCostCents' },
+          grossSalesCents: {
+            $sum: {
+              $cond: [
+                { $in: ['$status', REVENUE_TREND_STATUSES] },
+                '$totalAmount',
+                0,
+              ],
+            },
+          },
+          totalCostCents: {
+            $sum: {
+              $cond: [
+                { $in: ['$status', REVENUE_TREND_STATUSES] },
+                '$orderCostCents',
+                0,
+              ],
+            },
+          },
           revenueCents: {
-            $sum: { $subtract: ['$totalAmount', '$orderCostCents'] },
+            $sum: {
+              $cond: [
+                { $in: ['$status', REVENUE_TREND_STATUSES] },
+                { $subtract: ['$totalAmount', '$orderCostCents'] },
+                0,
+              ],
+            },
           },
         },
       },
