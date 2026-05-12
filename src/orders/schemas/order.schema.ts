@@ -76,6 +76,19 @@ export class Order {
   @Prop({ required: true })
   totalAmount: number;
 
+  @Prop({ type: Number, default: 0 })
+  subtotalAmount: number;
+
+  @Prop({ type: Number, default: 0 })
+  discountTotalAmount: number;
+
+  @Prop({
+    type: [mongoose.Schema.Types.ObjectId],
+    ref: 'DiscountCampaign',
+    default: [],
+  })
+  appliedDiscountCampaignIds: mongoose.Types.ObjectId[];
+
   @Prop({ type: ShippingAddressSchema, default: null })
   shippingAddress: ShippingAddress | null;
 
@@ -113,3 +126,4 @@ export class Order {
 export const OrderSchema = SchemaFactory.createForClass(Order);
 applyCommonSchemaOptions(OrderSchema);
 OrderSchema.index({ userId: 1, createdAt: -1 });
+OrderSchema.index({ appliedDiscountCampaignIds: 1 });

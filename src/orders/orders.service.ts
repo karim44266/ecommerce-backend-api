@@ -6,6 +6,11 @@ import {
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, FilterQuery, Model, Types } from 'mongoose';
+import {
+  DiscountCampaignsService,
+  DiscountPricingItemInput,
+} from '../discount-campaigns/discount-campaigns.service';
+import { PromotionMetricsService } from '../promotions/promotion-metrics.service';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { UpdateOrderDto } from './dto/update-order.dto';
@@ -19,6 +24,8 @@ import { ErpSyncService } from './erp-sync.service';
 import { UpdateTrackingDto } from './dto/update-tracking.dto';
 import { Order, OrderDocument } from './schemas/order.schema';
 
+const COMPLETED_STATUSES = new Set(['DELIVERED', 'SETTLED']);
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -28,13 +35,37 @@ export class OrdersService {
     private readonly productModel: Model<ProductDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    private readonly discountCampaignsService: DiscountCampaignsService,
     private readonly erpSyncService: ErpSyncService,
+    private readonly promotionMetricsService: PromotionMetricsService,
     @InjectConnection()
     private readonly connection: Connection,
   ) {}
 
   private escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private mapAppliedDiscountCampaignIds(ids: string[]): Types.ObjectId[] {
+    return ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+  }
+
+  private toPricingInputs(
+    items: Array<{
+      productId: string;
+      categoryId: string | null;
+      quantity: number;
+      unitPriceCents: number;
+    }>,
+  ): DiscountPricingItemInput[] {
+    return items.map((item) => ({
+      productId: item.productId,
+      categoryId: item.categoryId,
+      quantity: item.quantity,
+      unitPriceCents: item.unitPriceCents,
+    }));
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -73,22 +104,33 @@ export class OrdersService {
       }
     }
 
-    let totalCents = 0;
     const itemsWithPrice = dto.items.map((item) => {
       const product = productMap.get(item.productId)!;
       const effectiveUnitPrice = product.price;
       const effectiveUnitCost = Number(product.costPrice ?? 0);
       const unitPriceCents = Math.round(effectiveUnitPrice * 100);
       const unitCostCents = Math.round(effectiveUnitCost * 100);
-      totalCents += unitPriceCents * item.quantity;
+
       return {
         productId: item.productId,
+        categoryId: product.categoryId ? String(product.categoryId) : null,
         productName: product.name,
         quantity: item.quantity,
         unitPriceCents,
         unitCostCents,
       };
     });
+
+    const discountPricing = await this.discountCampaignsService.calculatePricing(
+      this.toPricingInputs(itemsWithPrice),
+      userId,
+    );
+    const subtotalCents = discountPricing.subtotalCents;
+    const discountTotalCents = discountPricing.discountCents;
+    const totalCents = discountPricing.finalTotalCents;
+    const appliedCampaignObjectIds = this.mapAppliedDiscountCampaignIds(
+      discountPricing.appliedCampaignIds,
+    );
 
     const session = await this.connection.startSession();
 
@@ -123,7 +165,10 @@ export class OrdersService {
               userId,
               status: 'DRAFT',
               deliveryCode,
+              subtotalAmount: subtotalCents,
+              discountTotalAmount: discountTotalCents,
               totalAmount: totalCents,
+              appliedDiscountCampaignIds: appliedCampaignObjectIds,
               shippingAddress: dto.shippingAddress,
               items: itemsWithPrice.map((item) => ({
                 productId: item.productId,
@@ -373,6 +418,19 @@ export class OrdersService {
       void this.erpSyncService.pushOrderToErp(updated.id);
     }
 
+    if (COMPLETED_STATUSES.has(dto.status)) {
+      const completedByUserId = String(updated.userId);
+      void this.promotionMetricsService
+        .attributeOrder(updated.id, completedByUserId)
+        .catch((error: unknown) => {
+          this.promotionMetricsService.logAttributionError(
+            updated.id,
+            completedByUserId,
+            error,
+          );
+        });
+    }
+
     return this.formatOrder(updated);
   }
 
@@ -469,19 +527,33 @@ export class OrdersService {
       ...Array.from(targetQtyByProduct.keys()),
     ]);
 
-    let totalCents = 0;
     const itemsWithPrice = targetItems.map((item) => {
       const product = productMap.get(item.productId)!;
       const effectiveUnitPrice = product.price;
+      const effectiveUnitCost = Number(product.costPrice ?? 0);
       const unitPriceCents = Math.round(effectiveUnitPrice * 100);
-      totalCents += unitPriceCents * item.quantity;
+      const unitCostCents = Math.round(effectiveUnitCost * 100);
+
       return {
         productId: item.productId,
-        name: product.name,
+        categoryId: product.categoryId ? String(product.categoryId) : null,
+        productName: product.name,
         quantity: item.quantity,
-        unitPrice: unitPriceCents,
+        unitPriceCents,
+        unitCostCents,
       };
     });
+
+    const discountPricing = await this.discountCampaignsService.calculatePricing(
+      this.toPricingInputs(itemsWithPrice),
+      String(order.userId),
+    );
+    const subtotalCents = discountPricing.subtotalCents;
+    const discountTotalCents = discountPricing.discountCents;
+    const totalCents = discountPricing.finalTotalCents;
+    const appliedCampaignObjectIds = this.mapAppliedDiscountCampaignIds(
+      discountPricing.appliedCampaignIds,
+    );
 
     const session = await this.connection.startSession();
 
@@ -532,8 +604,17 @@ export class OrdersService {
           orderId,
           {
             $set: {
-              items: itemsWithPrice,
+              items: itemsWithPrice.map((item) => ({
+                productId: item.productId,
+                name: item.productName,
+                quantity: item.quantity,
+                unitPrice: item.unitPriceCents,
+                unitCost: item.unitCostCents,
+              })),
+              subtotalAmount: subtotalCents,
+              discountTotalAmount: discountTotalCents,
               totalAmount: totalCents,
+              appliedDiscountCampaignIds: appliedCampaignObjectIds,
               ...(hasAddress ? { shippingAddress: dto.shippingAddress } : {}),
             },
             $push: {
@@ -722,7 +803,24 @@ export class OrdersService {
       id: plain.id,
       userId: customer?.id ?? String(plain.userId),
       status: plain.status,
+      subtotalAmount:
+        Number(plain.subtotalAmount ?? plain.totalAmount ?? 0) / 100,
+      discountTotalAmount: Number(plain.discountTotalAmount ?? 0) / 100,
       totalAmount: Number(plain.totalAmount) / 100,
+      appliedDiscountCampaignIds: Array.isArray(plain.appliedDiscountCampaignIds)
+        ? plain.appliedDiscountCampaignIds.map((campaignId: unknown) => {
+            if (campaignId && typeof campaignId === 'object') {
+              const asRecord = campaignId as Record<string, unknown>;
+              if (typeof asRecord.id === 'string') {
+                return asRecord.id;
+              }
+              if (asRecord._id) {
+                return String(asRecord._id);
+              }
+            }
+            return String(campaignId);
+          })
+        : [],
       shippingAddress: plain.shippingAddress,
       trackingNumber: plain.trackingNumber,
       carrier: plain.carrier,

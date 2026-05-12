@@ -31,6 +31,7 @@ import {
 } from './dto/product-response.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
+import { OptionalJwtAuthGuard } from '../behavior-tracking/guards/optional-jwt-auth.guard';
 
 @ApiTags('products')
 @Controller('products')
@@ -38,6 +39,7 @@ export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Get()
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'List products (with search/category/pagination)' })
   @ApiOkResponse({
     description: 'Paginated product list',
@@ -50,17 +52,20 @@ export class ProductsController {
       query.status = 'active';
     }
 
-    return this.productsService.findAll(query);
+    return this.productsService.findAll(query, {
+      userId: req?.user?.userId,
+    });
   }
 
   @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Get product by ID' })
   @ApiOkResponse({ description: 'Product detail', type: ProductResponseDto })
   @ApiNotFoundResponse({ description: 'Product not found' })
   async findOne(@Param('id') id: string, @Req() req: any) {
     const isAuthenticated = Boolean(req?.user?.userId);
 
-    const product = await this.productsService.findById(id);
+    const product = await this.productsService.findById(id, req?.user?.userId);
 
     if (!isAuthenticated && product.status !== 'active') {
       throw new NotFoundException('Product not found');
