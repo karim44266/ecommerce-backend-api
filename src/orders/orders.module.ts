@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { DiscountCampaignsModule } from '../discount-campaigns/discount-campaigns.module';
+import { PromotionsModule } from '../promotions/promotions.module';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { OrdersController } from './orders.controller';
@@ -10,6 +12,8 @@ import { OrdersService } from './orders.service';
 
 @Module({
   imports: [
+    DiscountCampaignsModule,
+    PromotionsModule,
     MongooseModule.forFeature([
       { name: Order.name, schema: OrderSchema },
       { name: ErpSyncJob.name, schema: ErpSyncJobSchema },

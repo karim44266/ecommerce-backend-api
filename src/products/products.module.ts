@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { DiscountCampaignsModule } from '../discount-campaigns/discount-campaigns.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { UsersModule } from '../users/users.module';
 import {
@@ -16,6 +17,7 @@ import { ProductsService } from './products.service';
       { name: Product.name, schema: ProductSchema },
       { name: Category.name, schema: CategorySchema },
     ]),
+    DiscountCampaignsModule,
     InventoryModule,
     UsersModule,
   ],

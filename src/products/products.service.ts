@@ -9,11 +9,44 @@ import {
   Category,
   CategoryDocument,
 } from '../categories/schemas/category.schema';
+import {
+  DiscountCampaignsService,
+  ProductDiscountPreviewResult,
+} from '../discount-campaigns/discount-campaigns.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product, ProductDocument } from './schemas/product.schema';
+
+export interface ProductActiveDiscountView {
+  campaignId: string;
+  campaignName: string;
+  discountType: 'PERCENT' | 'FIXED';
+  discountValue: number;
+  discountPercent: number;
+  discountAmount: number;
+  discountedPrice: number;
+  minOrderAmount: number | null;
+}
+
+export interface ProductResponseView {
+  id: string;
+  name: unknown;
+  sku: unknown;
+  description: unknown;
+  price: number;
+  image: unknown;
+  inventory: unknown;
+  stock: unknown;
+  status: unknown;
+  category: string | null;
+  categoryId: string | null;
+  displayPrice: number;
+  activeDiscount: ProductActiveDiscountView | null;
+  createdAt: unknown;
+  updatedAt: unknown;
+}
 
 @Injectable()
 export class ProductsService {
@@ -23,6 +56,7 @@ export class ProductsService {
     @InjectModel(Category.name)
     private readonly categoryModel: Model<CategoryDocument>,
     private readonly inventoryService: InventoryService,
+    private readonly discountCampaignsService: DiscountCampaignsService,
   ) {}
 
   private escapeRegex(value: string): string {
@@ -32,7 +66,7 @@ export class ProductsService {
   /** Map a raw DB row + category name to the API response shape. */
   private toResponse(
     product: ProductDocument | Record<string, unknown>,
-  ) {
+  ): ProductResponseView {
     const plain =
       typeof (product as ProductDocument).toJSON === 'function'
         ? ((product as ProductDocument).toJSON() as Record<string, unknown> & {
@@ -58,14 +92,72 @@ export class ProductsService {
       inventory: plain.inventory,
       stock: plain.inventory,
       status: plain.status,
-      category: category?.name ?? null,
+      category: category?.name ? String(category.name) : null,
       categoryId:
-        category?.id ?? (plain.categoryId ? String(plain.categoryId) : null),
+        category?.id
+          ? String(category.id)
+          : (plain.categoryId ? String(plain.categoryId) : null),
+      displayPrice: Number(plain.price),
+      activeDiscount: null,
       createdAt: plain.createdAt,
       updatedAt: plain.updatedAt,
     };
 
     return baseResponse;
+  }
+
+  private mapDiscountPreview(
+    preview: ProductDiscountPreviewResult,
+  ): ProductActiveDiscountView {
+    return {
+      campaignId: preview.campaignId,
+      campaignName: preview.campaignName,
+      discountType: preview.discountType,
+      discountValue: Number(preview.discountValue.toFixed(2)),
+      discountPercent: Number(preview.discountPercent.toFixed(2)),
+      discountAmount: Number(preview.discountAmount.toFixed(2)),
+      discountedPrice: Number(preview.discountedPrice.toFixed(2)),
+      minOrderAmount:
+        preview.minOrderAmount === null
+          ? null
+          : Number(preview.minOrderAmount.toFixed(2)),
+    };
+  }
+
+  private async addDiscountPreviews(
+    products: ProductResponseView[],
+    userId?: string,
+  ): Promise<ProductResponseView[]> {
+    if (products.length === 0) {
+      return products;
+    }
+
+    const previews = await this.discountCampaignsService.getProductDiscountPreviews(
+      products.map((product) => ({
+        productId: product.id,
+        categoryId: product.categoryId,
+        unitPrice: product.price,
+      })),
+      userId,
+    );
+
+    return products.map((product) => {
+      const preview = previews.get(product.id);
+
+      if (!preview) {
+        return {
+          ...product,
+          displayPrice: Number(product.price.toFixed(2)),
+          activeDiscount: null,
+        };
+      }
+
+      return {
+        ...product,
+        displayPrice: Number(preview.discountedPrice.toFixed(2)),
+        activeDiscount: this.mapDiscountPreview(preview),
+      };
+    });
   }
 
   /** Build WHERE conditions from query parameters. */
@@ -139,7 +231,7 @@ export class ProductsService {
 
   async findAll(
     query: ProductQueryDto,
-    options?: { allowedProductIds?: string[] },
+    options?: { allowedProductIds?: string[]; userId?: string },
   ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -168,8 +260,11 @@ export class ProductsService {
         .limit(limit),
     ]);
 
+    const mapped = rows.map((row) => this.toResponse(row));
+    const data = await this.addDiscountPreviews(mapped, options?.userId);
+
     return {
-      data: rows.map((row) => this.toResponse(row)),
+      data,
       meta: {
         total,
         page,
@@ -179,7 +274,7 @@ export class ProductsService {
     };
   }
 
-  async findById(id: string) {
+  async findById(id: string, userId?: string) {
     const product = await this.productModel
       .findById(id)
       .populate('categoryId', 'name');
@@ -188,7 +283,9 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
 
-    return this.toResponse(product);
+    const mapped = this.toResponse(product);
+    const [withDiscount] = await this.addDiscountPreviews([mapped], userId);
+    return withDiscount ?? mapped;
   }
 
   async create(dto: CreateProductDto) {
