@@ -674,7 +674,7 @@ function buildUsers(
 ) {
   const now = new Date();
   const adminEmail = normalizeEmail(
-    process.env.ADMIN_EMAIL ?? 'admin@probuild.local',
+    process.env.ADMIN_EMAIL ?? 'admin@emmtn.com',
   );
 
   const adminUser: SeedUser = {
@@ -699,7 +699,7 @@ function buildUsers(
     const first = FIRST_NAMES[i % FIRST_NAMES.length];
     const last = LAST_NAMES[(i * 3) % LAST_NAMES.length];
     const email = normalizeEmail(
-      `${first}.${last}.${i + 1}@probuild-staff.local`,
+      `${first}.${last}.${i + 1}@staff.emmtn.com`,
     );
     const createdAt = addDays(now, -randomInt(rng, 120, 480));
 
@@ -728,7 +728,7 @@ function buildUsers(
     const createdAt = addDays(now, -randomInt(rng, 45, 600));
     const accountStatus = chance(rng, 0.09) ? 'blocked' : 'active';
     const email = normalizeEmail(
-      `${first}.${last}.${i + 1}@probuild-client.local`,
+      `${first}.${last}.${i + 1}@client.emmtn.com`,
     );
 
     customers.push({
@@ -1703,7 +1703,7 @@ async function seed() {
     console.log('Summary:', summary);
     console.log(
       'Admin credentials:',
-      normalizeEmail(process.env.ADMIN_EMAIL ?? 'admin@probuild.local'),
+      normalizeEmail(process.env.ADMIN_EMAIL ?? 'admin@emmtn.com'),
       '/ ',
       process.env.ADMIN_PASSWORD ?? 'Admin1234!',
     );
