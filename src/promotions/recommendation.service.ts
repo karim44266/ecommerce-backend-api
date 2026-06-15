@@ -595,7 +595,14 @@ export class PromotionRecommendationService {
     return output;
   }
 
-  private getPromotionReason(candidate: ProductCandidate): string {
+  private getPromotionReason(
+    candidate: ProductCandidate,
+    source: RecommendationSource,
+  ): string {
+    if (candidate.isAdminForced) {
+      return 'Admin spotlight';
+    }
+
     if (candidate.inventoryState === InventoryState.LOW) {
       return 'Limited stock remaining';
     }
@@ -604,10 +611,21 @@ export class PromotionRecommendationService {
       return 'Great availability - order now';
     }
 
-    return 'Popular in your favorite category';
+    if (source === 'personalized') {
+      return 'Picked for you';
+    }
+
+    if (source === 'popular') {
+      return 'Popular with customers';
+    }
+
+    return 'Trending now';
   }
 
-  formatRecommendations(candidates: ProductCandidate[]): PromotionDto[] {
+  formatRecommendations(
+    candidates: ProductCandidate[],
+    source: RecommendationSource,
+  ): PromotionDto[] {
     return candidates.map((candidate) => ({
       productId: candidate.productId,
       productName: candidate.name,
@@ -618,7 +636,7 @@ export class PromotionRecommendationService {
       discountPercent: null,
       discountAmount: null,
       stockLevel: candidate.stockLevel,
-      promotionReason: this.getPromotionReason(candidate),
+      promotionReason: this.getPromotionReason(candidate, source),
       score: Number(candidate.score.toFixed(6)),
       isAdminForced: candidate.isAdminForced,
     }));
@@ -841,7 +859,7 @@ export class PromotionRecommendationService {
     const inStock = await this.validateStockAtDelivery(limited);
 
     const recommendations = await this.applyDiscountPreviews(
-      this.formatRecommendations(inStock),
+      this.formatRecommendations(inStock, 'popular'),
       userId,
     );
 
@@ -890,7 +908,7 @@ export class PromotionRecommendationService {
 
       const inStock = await this.validateStockAtDelivery(limited);
       const recommendations = await this.applyDiscountPreviews(
-        this.formatRecommendations(inStock),
+        this.formatRecommendations(inStock, 'personalized'),
         userId,
       );
 

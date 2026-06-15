@@ -132,6 +132,48 @@ function getTopCategoryIds(products: SeedProduct[]): ObjectId[] {
     .map((entry) => entry.categoryId);
 }
 
+function rotateArray<T>(items: T[], offset: number): T[] {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const safeOffset = ((offset % items.length) + items.length) % items.length;
+  return items.slice(safeOffset).concat(items.slice(0, safeOffset));
+}
+
+function buildAffinityScores(count: number): number[] {
+  if (count <= 0) {
+    return [];
+  }
+
+  const base = [0.55, 0.3, 0.15].slice(0, count);
+  return base.map((score, index, scores) => {
+    if (index === scores.length - 1) {
+      const used = scores.slice(0, index).reduce((sum, value) => sum + value, 0);
+      return Number((1 - used).toFixed(6));
+    }
+    return score;
+  });
+}
+
+function pickProductsForUser(
+  products: SeedProduct[],
+  categoryIds: ObjectId[],
+  targetCount: number,
+  offset: number,
+): SeedProduct[] {
+  const categorySet = new Set(categoryIds.map((id) => id.toHexString()));
+  const preferred = products.filter((product) => categorySet.has(product.categoryId.toHexString()));
+  const source = preferred.length >= targetCount ? preferred : products;
+
+  if (source.length === 0) {
+    return [];
+  }
+
+  const rotated = rotateArray(source, offset);
+  return rotated.slice(0, Math.min(targetCount, rotated.length));
+}
+
 function sessionId(suffix: string): string {
   return `${SESSION_PREFIX}-${suffix}`;
 }
@@ -584,27 +626,29 @@ async function seedPromotionsData() {
       );
     }
 
-    const primaryUser = customers[0];
+    const profileUsers = customers.slice(
+      0,
+      Math.min(customers.length, options.mode === 'stress' ? 8 : 4),
+    );
+    const primaryUser = profileUsers[0] ?? customers[0];
     const topCategoryIds = getTopCategoryIds(products);
 
     if (topCategoryIds.length === 0) {
       throw new Error('Could not derive category affinities from available products.');
     }
 
-    const topProducts = products
-      .filter((product) =>
-        topCategoryIds.some(
-          (categoryId) => categoryId.toHexString() === product.categoryId.toHexString(),
-        ),
-      )
-      .slice(0, Math.max(options.trackedProducts, 8));
-
-    const productsForTracking =
-      topProducts.length >= options.trackedProducts
-        ? topProducts.slice(0, options.trackedProducts)
-        : products.slice(0, options.trackedProducts);
-
-    const sortedTopPrices = productsForTracking
+    const primaryTopCategoryIds = rotateArray(topCategoryIds, 0).slice(
+      0,
+      Math.min(3, topCategoryIds.length),
+    );
+    const trackingCount = Math.max(options.trackedProducts, 8);
+    const primaryProductsForTracking = pickProductsForUser(
+      products,
+      primaryTopCategoryIds,
+      trackingCount,
+      0,
+    );
+    const sortedTopPrices = primaryProductsForTracking
       .map((product) => product.price)
       .sort((a, b) => a - b);
     const preferredMin = sortedTopPrices[0] ?? 500;
@@ -617,112 +661,123 @@ async function seedPromotionsData() {
 
     const now = new Date();
 
-    const affinityScores = [0.55, 0.3, 0.15]
-      .slice(0, topCategoryIds.length)
-      .map((score, index, scores) => {
-        if (index === scores.length - 1) {
-          const used = scores.slice(0, index).reduce((sum, value) => sum + value, 0);
-          return Number((1 - used).toFixed(6));
-        }
-        return score;
-      });
-
-    await userProfiles.updateOne(
-      { userId: primaryUser._id },
-      {
-        $set: {
-          userId: primaryUser._id,
-          categoryAffinities: topCategoryIds.map((categoryId, index) => ({
-            categoryId,
-            score: affinityScores[index] ?? 0,
-            eventCount: 12 - index * 2,
-          })),
-          topCategoryIds: topCategoryIds.slice(0, 3),
-          purchaseFrequency: 4,
-          avgOrderValue: Number((preferredMax * 1.4).toFixed(2)),
-          preferredPriceRange: {
-            min: preferredMin,
-            max: Math.max(preferredMin, preferredMax),
-          },
-          totalOrders: 6,
-          lastActiveAt: new Date(now.getTime() - 30 * 60 * 1000),
-          isNewUser: false,
-          recomputedAt: now,
-        },
-      },
-      { upsert: true },
-    );
-
     const sessionRegex = new RegExp(`^${SESSION_PREFIX}-`);
     await userEvents.deleteMany({ sessionId: { $regex: sessionRegex } });
     await conversions.deleteMany({ sessionId: { $regex: sessionRegex } });
 
     const seededEvents: Array<Record<string, unknown>> = [];
-
-    topCategoryIds.forEach((categoryId, index) => {
-      const eventBase = now.getTime() - (index + 1) * 2 * 60 * 60 * 1000;
-
-      seededEvents.push(
-        {
-          _id: new ObjectId(),
-          userId: primaryUser._id,
-          sessionId: sessionId(`user-${primaryUser._id.toHexString()}-cat-${index + 1}`),
-          eventType: 'VIEW_CATEGORY',
-          entityId: categoryId,
-          entityType: 'CATEGORY',
-          metadata: { seeded: true },
-          createdAt: new Date(eventBase),
-        },
-        {
-          _id: new ObjectId(),
-          userId: primaryUser._id,
-          sessionId: sessionId(`user-${primaryUser._id.toHexString()}-cat-${index + 1}`),
-          eventType: 'ADD_TO_CART',
-          entityId: categoryId,
-          entityType: 'CATEGORY',
-          metadata: { seeded: true },
-          createdAt: new Date(eventBase + 20 * 60 * 1000),
-        },
+    const profileUpserts = profileUsers.map((user, index) => {
+      const rotatedCategories = rotateArray(topCategoryIds, index);
+      const userTopCategoryIds = rotatedCategories.slice(0, Math.min(3, rotatedCategories.length));
+      const affinityScores = buildAffinityScores(userTopCategoryIds.length);
+      const userProductsForTracking = pickProductsForUser(
+        products,
+        userTopCategoryIds,
+        trackingCount,
+        index * 3,
       );
+      const userPrices = userProductsForTracking.map((product) => product.price).sort((a, b) => a - b);
+      const userPreferredMin = userPrices[0] ?? preferredMin;
+      const userPreferredMax = userPrices[userPrices.length - 1] ?? userPreferredMin;
+      const lastActiveAt = new Date(now.getTime() - (index + 1) * 25 * 60 * 1000);
+
+      userTopCategoryIds.forEach((categoryId, catIndex) => {
+        const eventBase = now.getTime() - (catIndex + 1 + index) * 2 * 60 * 60 * 1000;
+
+        seededEvents.push(
+          {
+            _id: new ObjectId(),
+            userId: user._id,
+            sessionId: sessionId(`user-${user._id.toHexString()}-cat-${catIndex + 1}`),
+            eventType: 'VIEW_CATEGORY',
+            entityId: categoryId,
+            entityType: 'CATEGORY',
+            metadata: { seeded: true },
+            createdAt: new Date(eventBase),
+          },
+          {
+            _id: new ObjectId(),
+            userId: user._id,
+            sessionId: sessionId(`user-${user._id.toHexString()}-cat-${catIndex + 1}`),
+            eventType: 'ADD_TO_CART',
+            entityId: categoryId,
+            entityType: 'CATEGORY',
+            metadata: { seeded: true },
+            createdAt: new Date(eventBase + 20 * 60 * 1000),
+          },
+        );
+      });
+
+      userProductsForTracking.forEach((product, productIndex) => {
+        const eventBase = now.getTime() - (productIndex + 1 + index) * 40 * 60 * 1000;
+        const source = productIndex % 2 === 0 ? 'personalized' : 'popular';
+
+        seededEvents.push(
+          {
+            _id: new ObjectId(),
+            userId: user._id,
+            sessionId: sessionId(`track-${user._id.toHexString()}-${productIndex + 1}`),
+            eventType: 'VIEW_PRODUCT',
+            entityId: product._id,
+            entityType: 'PRODUCT',
+            metadata: {
+              promotionImpression: true,
+              position: productIndex,
+              source,
+              seeded: true,
+            },
+            createdAt: new Date(eventBase),
+          },
+          {
+            _id: new ObjectId(),
+            userId: user._id,
+            sessionId: sessionId(`track-${user._id.toHexString()}-${productIndex + 1}`),
+            eventType: 'VIEW_PRODUCT',
+            entityId: product._id,
+            entityType: 'PRODUCT',
+            metadata: {
+              promotionClick: true,
+              position: productIndex,
+              source,
+              seeded: true,
+            },
+            createdAt: new Date(eventBase + 10 * 60 * 1000),
+          },
+        );
+      });
+
+      return {
+        updateOne: {
+          filter: { userId: user._id },
+          update: {
+            $set: {
+              userId: user._id,
+              categoryAffinities: userTopCategoryIds.map((categoryId, catIndex) => ({
+                categoryId,
+                score: affinityScores[catIndex] ?? 0,
+                eventCount: 12 - catIndex * 2,
+              })),
+              topCategoryIds: userTopCategoryIds.slice(0, 3),
+              purchaseFrequency: 2 + (index % 4),
+              avgOrderValue: Number((userPreferredMax * (1.1 + (index % 3) * 0.15)).toFixed(2)),
+              preferredPriceRange: {
+                min: userPreferredMin,
+                max: Math.max(userPreferredMin, userPreferredMax),
+              },
+              totalOrders: 4 + index * 2,
+              lastActiveAt,
+              isNewUser: false,
+              recomputedAt: now,
+            },
+          },
+          upsert: true,
+        },
+      };
     });
 
-    productsForTracking.forEach((product, index) => {
-      const eventBase = now.getTime() - (index + 1) * 40 * 60 * 1000;
-      const source = index % 2 === 0 ? 'personalized' : 'popular';
-
-      seededEvents.push(
-        {
-          _id: new ObjectId(),
-          userId: primaryUser._id,
-          sessionId: sessionId(`track-${primaryUser._id.toHexString()}-${index + 1}`),
-          eventType: 'VIEW_PRODUCT',
-          entityId: product._id,
-          entityType: 'PRODUCT',
-          metadata: {
-            promotionImpression: true,
-            position: index,
-            source,
-            seeded: true,
-          },
-          createdAt: new Date(eventBase),
-        },
-        {
-          _id: new ObjectId(),
-          userId: primaryUser._id,
-          sessionId: sessionId(`track-${primaryUser._id.toHexString()}-${index + 1}`),
-          eventType: 'VIEW_PRODUCT',
-          entityId: product._id,
-          entityType: 'PRODUCT',
-          metadata: {
-            promotionClick: true,
-            position: index,
-            source,
-            seeded: true,
-          },
-          createdAt: new Date(eventBase + 10 * 60 * 1000),
-        },
-      );
-    });
+    if (profileUpserts.length > 0) {
+      await userProfiles.bulkWrite(profileUpserts, { ordered: false });
+    }
 
     if (seededEvents.length > 0) {
       await userEvents.insertMany(seededEvents, { ordered: false });
@@ -800,7 +855,7 @@ async function seedPromotionsData() {
       });
     }
 
-    const adminForcedProduct = productsForTracking[0] ?? products[0];
+    const adminForcedProduct = primaryProductsForTracking[0] ?? products[0];
     if (adminForcedProduct) {
       const adminImpressedAt = new Date(now.getTime() - 25 * 60 * 1000);
 
@@ -851,8 +906,8 @@ async function seedPromotionsData() {
       customers: customers.length,
       categories: categories.length,
       products: products.length,
-      topCategoryIds: topCategoryIds.map((id) => id.toHexString()),
-      trackedProducts: productsForTracking.length,
+      topCategoryIds: primaryTopCategoryIds.map((id) => id.toHexString()),
+      trackedProducts: primaryProductsForTracking.length,
       userEventsInserted: seededEvents.length,
       promotionConversionsInserted: seededConversions.length,
       completedOrdersAvailable: completedOrders.length,
